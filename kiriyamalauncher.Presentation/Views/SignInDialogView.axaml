@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="380" d:DesignHeight="470"
+             x:Class="kiriyamalauncher.Presentation.Views.SignInDialogView"
+             x:DataType="vm:SignInDialogViewModel"
+			 xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:i="using:Material.Icons.Avalonia"
+			 Width="380">
+
+	<!-- 整块表单用 BusyArea 包住（和 demo 的登录表单一致），登录 / 注册共用一个表单。 -->
+	<sukiUi:BusyArea BusyText="正在处理……" IsBusy="{Binding IsSigningIn}">
+		<StackPanel Spacing="4">
+
+			<TextBlock Text="{Binding TitleText}" FontSize="18" FontWeight="DemiBold"
+					   Margin="0,4,0,20" HorizontalAlignment="Center" />
+
+			<TextBlock Text="{Binding IdentifierLabel}" FontWeight="DemiBold" Margin="6,0,0,3"
+					   Foreground="{DynamicResource SukiLowText}" />
+			<TextBox Text="{Binding LoginName}" Watermark="例如 kiriyama" />
+			<TextBlock Text="{Binding LoginNameError}" Margin="6,3,0,0" FontSize="12"
+					   Foreground="{DynamicResource ErrorBrush}"
+					   IsVisible="{Binding LoginNameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+			<StackPanel Spacing="4" IsVisible="{Binding IsRegisterMode}">
+				<TextBlock Text="昵称" FontWeight="DemiBold" Margin="6,12,0,3"
+						   Foreground="{DynamicResource SukiLowText}" />
+				<TextBox Text="{Binding Nickname}" Watermark="显示在标题栏上的名字" />
+
+				<TextBlock Text="邮箱" FontWeight="DemiBold" Margin="6,12,0,3"
+						   Foreground="{DynamicResource SukiLowText}" />
+				<TextBox Text="{Binding Email}" Watermark="name@example.com" />
+				<TextBlock Text="{Binding EmailError}" Margin="6,3,0,0" FontSize="12"
+						   Foreground="{DynamicResource ErrorBrush}"
+						   IsVisible="{Binding EmailError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+			</StackPanel>
+
+			<TextBlock Text="密码" FontWeight="DemiBold" Margin="6,12,0,3"
+					   Foreground="{DynamicResource SukiLowText}" />
+			<TextBox Text="{Binding Password}" Watermark="测试阶段不会保存" PasswordChar="*" />
+			<TextBlock Text="{Binding PasswordError}" Margin="6,3,0,0" FontSize="12"
+					   Foreground="{DynamicResource ErrorBrush}"
+					   IsVisible="{Binding PasswordError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+			<StackPanel Spacing="4" IsVisible="{Binding IsRegisterMode}">
+				<TextBlock Text="确认密码" FontWeight="DemiBold" Margin="6,12,0,3"
+						   Foreground="{DynamicResource SukiLowText}" />
+				<TextBox Text="{Binding ConfirmPassword}" Watermark="再输入一次密码" PasswordChar="*" />
+				<TextBlock Text="{Binding ConfirmPasswordError}" Margin="6,3,0,0" FontSize="12"
+						   Foreground="{DynamicResource ErrorBrush}"
+						   IsVisible="{Binding ConfirmPasswordError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+			</StackPanel>
+
+			<Button Classes="Flat" Margin="0,22,0,0" HorizontalAlignment="Center"
+					Width="160" Height="40"
+					Content="{Binding SubmitText}"
+					Command="{Binding SubmitCommand}" />
+
+			<Button Classes="Basic" Margin="0,8,0,0" HorizontalAlignment="Center"
+					Content="{Binding SwitchText}"
+					Command="{Binding SwitchModeCommand}" />
+
+		</StackPanel>
+	</sukiUi:BusyArea>
+</UserControl>

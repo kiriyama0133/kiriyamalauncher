@@ -1,0 +1,27 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="kiriyamalauncher.Presentation.App"
+             xmlns:b="using:kiriyamalauncher.Presentation.Base"
+             xmlns:i="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:sukiUi="clr-namespace:SukiUI;assembly=SukiUI"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+	<Application.DataTemplates>
+		<b:ViewLocator />
+	</Application.DataTemplates>
+
+	<Application.Styles>
+		<sukiUi:SukiTheme ThemeColor="Blue" Locale="zh-CN" />
+		<i:MaterialIconStyles />
+		<StyleInclude Source="/Base/Styles/Colors.axaml" />
+		<StyleInclude Source="/Base/Styles/UserControlStyles.axaml" />
+		<StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Simple.xaml" />
+		<StyleInclude Source="avares://AvaloniaProgressRing/Styles/ProgressRing.xaml" />
+	</Application.Styles>
+
+	<Application.Resources>
+		<FontFamily x:Key="ViewHeadingFont">avares://kiriyamalauncher.Presentation/Base/Assets/Fonts/akashi-font#Akashi</FontFamily>
+	</Application.Resources>
+	
+</Application>

@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="kiriyamalauncher.Presentation.Views.MainView"
+             x:DataType="vm:MainViewModel"
+			 xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:i="using:Material.Icons.Avalonia">
+
+	<!--
+		导航栏使用 SukiUI 自带的 SukiSideMenu：
+		展开/收起、选中态、内容过渡动画都由控件负责，导航项直接绑定页面 ViewModel，
+		页面视图由 App.axaml 中注册的 ViewLocator 按命名约定解析。
+	-->
+	<sukiUi:SukiSideMenu ItemsSource="{Binding Pages}"
+						 SelectedItem="{Binding ActivePage}"
+						 IsMenuExpanded="{Binding IsMenuExpanded, Mode=TwoWay}"
+						 IsSearchEnabled="False"
+						 OpenPaneLength="220">
+
+		<sukiUi:SukiSideMenu.ItemTemplate>
+			<DataTemplate DataType="{x:Type vm:PageViewModel}">
+				<sukiUi:SukiSideMenuItem Classes="Compact" Header="{Binding DisplayName}">
+					<sukiUi:SukiSideMenuItem.Icon>
+						<i:MaterialIcon Kind="{Binding Icon}" />
+					</sukiUi:SukiSideMenuItem.Icon>
+				</sukiUi:SukiSideMenuItem>
+			</DataTemplate>
+		</sukiUi:SukiSideMenu.ItemTemplate>
+
+		<sukiUi:SukiSideMenu.HeaderContent>
+			<StackPanel Margin="20,0,20,24" Spacing="8">
+				<i:MaterialIcon Kind="LanConnect" Width="48" Height="48" HorizontalAlignment="Left"
+								Foreground="{DynamicResource SukiPrimaryColor}" />
+				<TextBlock Text="{Binding AppDisplayName}" FontSize="16" FontWeight="DemiBold" />
+				<TextBlock Text="{Binding VersionText}" FontSize="12" Opacity="0.6" />
+			</StackPanel>
+		</sukiUi:SukiSideMenu.HeaderContent>
+
+	</sukiUi:SukiSideMenu>
+</UserControl>

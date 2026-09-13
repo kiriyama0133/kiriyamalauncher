@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    ZeroTier.Sockets 1.8.4 是 ZeroTier 官方基于 libzt 的早期封装包，包结构不符合现代约定：
+
+    1. 原生 libzt.dll 与托管程序集一起放在 lib/<tfm>/ 下，NuGet 会把它当成托管引用，
+       编译期产生 MSB3246（PE image does not have metadata）。
+    2. 原生资产使用已废弃的 win10-x64 RID，.NET 8 及更高版本会产生 NETSDK1206。
+
+    两者都不影响 libzt.dll 复制到输出目录与运行时加载，因此这里统一消除噪音。
+  -->
+  <PropertyGroup>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3246</MSBuildWarningsAsMessages>
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
+  </PropertyGroup>
+
+</Project>

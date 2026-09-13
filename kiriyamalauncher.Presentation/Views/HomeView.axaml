@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="kiriyamalauncher.Presentation.Views.HomeView"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+             x:DataType="vm:HomeViewModel">
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.header">
+			<Setter Property="FontSize" Value="15" />
+			<Setter Property="FontWeight" Value="Bold" />
+			<Setter Property="Margin" Value="0,22,0,6" />
+		</Style>
+
+		<Style Selector="TextBlock.sectionContent">
+			<Setter Property="TextWrapping" Value="Wrap" />
+			<Setter Property="LineHeight" Value="23" />
+		</Style>
+	</UserControl.Styles>
+
+	<Border>
+		<ScrollViewer>
+			<StackPanel Margin="24">
+				<TextBlock Text="{Binding AppDisplayName}" FontSize="30" FontWeight="DemiBold" />
+				<TextBlock Text="{Binding AppDescription}" Classes="sectionContent" Margin="0,6,0,0" Opacity="0.75" />
+
+				<TextBlock Text="这是什么" Classes="header" />
+				<TextBlock Text="{Binding Purpose}" Classes="sectionContent" />
+
+				<TextBlock Text="它是怎么工作的" Classes="header" />
+				<TextBlock Text="{Binding HowItWorks}" Classes="sectionContent" />
+
+				<TextBlock Text="设计目标" Classes="header" />
+				<TextBlock Text="{Binding Highlights}" Classes="sectionContent" />
+
+				<TextBlock Text="当前状态" Classes="header" />
+				<TextBlock Text="{Binding Status}" Classes="sectionContent" />
+
+				<TextBlock Text="关于" Classes="header" />
+				<StackPanel Orientation="Horizontal" Spacing="6">
+					<TextBlock Text="{Binding ApplicationInfo}" VerticalAlignment="Center" />
+					<TextBlock Text="·" VerticalAlignment="Center" Opacity="0.6" />
+					<HyperlinkButton Classes="inlineHyperlink" Content="开源许可" NavigateUri="{Binding LicenseURL}" />
+				</StackPanel>
+			</StackPanel>
+		</ScrollViewer>
+	</Border>
+</UserControl>

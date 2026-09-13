@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="46"
+             x:Class="kiriyamalauncher.Presentation.Base.Controls.FontSizeControl"
+             x:Name="Root"
+             Width="420">
+
+	<!--
+		字体大小：只有一根进度条，直接在条上点击/拖动即可调整。
+		数值变化后由全局快照读写器防抖写库。
+	-->
+	<StackPanel Spacing="8">
+
+		<ProgressBar Name="PART_Bar"
+					 Minimum="{Binding #Root.Minimum}"
+					 Maximum="{Binding #Root.Maximum}"
+					 Value="{Binding #Root.Value}"
+					 Height="18"
+					 CornerRadius="9"
+					 Cursor="Hand" />
+
+		<TextBlock HorizontalAlignment="Center"
+				   FontWeight="DemiBold"
+				   Text="{Binding #Root.Value, StringFormat='{}{0:0} px'}" />
+
+	</StackPanel>
+</UserControl>

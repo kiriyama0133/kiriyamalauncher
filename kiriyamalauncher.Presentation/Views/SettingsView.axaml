@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="kiriyamalauncher.Presentation.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+			 xmlns:c="clr-namespace:kiriyamalauncher.Presentation.Base.Controls"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels">
+
+	<UserControl.Styles>
+		<!-- 每一项设置一张卡片，纵向排列。 -->
+		<Style Selector="Border.settingCard">
+			<Setter Property="Background" Value="{DynamicResource SukiCardBackground}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource SukiBorderBrush}" />
+			<Setter Property="BorderThickness" Value="1" />
+			<Setter Property="CornerRadius" Value="14" />
+			<Setter Property="Padding" Value="18" />
+			<Setter Property="Width" Value="460" />
+			<Setter Property="HorizontalAlignment" Value="Left" />
+		</Style>
+
+		<!-- 卡片说明文字（次要信息）。 -->
+		<Style Selector="TextBlock.cardHint">
+			<Setter Property="Foreground" Value="{DynamicResource SukiLowText}" />
+			<Setter Property="FontSize" Value="12" />
+			<Setter Property="TextWrapping" Value="Wrap" />
+		</Style>
+	</UserControl.Styles>
+
+	<Border Padding="24">
+		<ScrollViewer>
+			<StackPanel Spacing="14" HorizontalAlignment="Left">
+
+				<Border Classes="settingCard">
+					<StackPanel Spacing="12">
+						<TextBlock Text="字体大小" FontSize="15" FontWeight="DemiBold" />
+
+						<c:FontSizeControl Value="{Binding FontSize, Mode=TwoWay}"
+										   Minimum="{Binding MinimumFontSize}"
+										   Maximum="{Binding MaximumFontSize}" />
+					</StackPanel>
+				</Border>
+
+				<Border Classes="settingCard">
+					<StackPanel Spacing="12">
+						<TextBlock Text="连接模式" FontSize="15" FontWeight="DemiBold" />
+
+						<!-- 切换 ZeroTier 的网络控制方式：官方控制器 / 自建控制器。 -->
+						<StackPanel Orientation="Horizontal" Spacing="10">
+							<RadioButton Classes="Chips" Height="40" GroupName="ZeroTierConnectionMode"
+										 Content="my.zerotier.com"
+										 IsChecked="{Binding IsOfficialController}" />
+							<RadioButton Classes="Chips" Height="40" GroupName="ZeroTierConnectionMode"
+										 Content="自建控制器"
+										 IsChecked="{Binding IsSelfHostedController}" />
+						</StackPanel>
+
+						<TextBlock Classes="cardHint" Text="{Binding ConnectionModeHint}" />
+					</StackPanel>
+				</Border>
+
+				<Border Classes="settingCard">
+					<StackPanel Spacing="12">
+						<TextBlock Text="ZeroTier 网络 ID" FontSize="15" FontWeight="DemiBold" />
+
+						<!-- 输入框聚焦时显示「确认 / 取消」。 -->
+						<StackPanel Name="NetworkIdRow" Spacing="10"
+									GotFocus="OnNetworkIdFocusChanged"
+									LostFocus="OnNetworkIdFocusChanged">
+							<TextBox Text="{Binding ZeroTierNetworkId}" MaxLength="16"
+									 Watermark="16 位十六进制，例如 633e31d8a2724274" />
+
+							<TextBlock Text="{Binding NetworkIdError}" FontSize="12"
+									   Foreground="{DynamicResource ErrorBrush}"
+									   IsVisible="{Binding HasNetworkIdError}" />
+
+							<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
+										IsVisible="{Binding IsEditingNetworkId}">
+								<Button Classes="Flat" Content="确认" Command="{Binding SaveNetworkIdCommand}" />
+								<Button Classes="Basic" Content="取消" Command="{Binding CancelNetworkIdCommand}" />
+							</StackPanel>
+						</StackPanel>
+					</StackPanel>
+				</Border>
+
+				<Border Classes="settingCard">
+					<StackPanel Spacing="12">
+						<TextBlock Text="ZeroTier Moon 服务器" FontSize="15" FontWeight="DemiBold" />
+
+						<!-- 输入框聚焦时显示「确认 / 取消」。 -->
+						<StackPanel Name="MoonServerRow" Spacing="10"
+									GotFocus="OnMoonServerFocusChanged"
+									LostFocus="OnMoonServerFocusChanged">
+							<TextBox Text="{Binding MoonServerIp}" MaxLength="16"
+									 Watermark="moon 节点 ID，例如 1947244ee4" />
+
+							<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
+										IsVisible="{Binding IsEditingMoonServer}">
+								<Button Classes="Flat" Content="确认" Command="{Binding SaveMoonServerCommand}" />
+								<Button Classes="Basic" Content="取消" Command="{Binding CancelMoonServerCommand}" />
+							</StackPanel>
+						</StackPanel>
+
+						<TextBlock Classes="cardHint"
+								   Text="moon 节点 ID（zerotier-cli 输出的 10 位十六进制），留空则使用默认 moon。" />
+					</StackPanel>
+				</Border>
+
+			</StackPanel>
+		</ScrollViewer>
+	</Border>
+</UserControl>

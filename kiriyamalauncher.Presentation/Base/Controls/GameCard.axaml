@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="220" d:DesignHeight="210"
+             x:Class="kiriyamalauncher.Presentation.Base.Controls.GameCard"
+             x:DataType="vm:GameViewModel"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:i="using:Material.Icons.Avalonia"
+			 Width="220">
+
+	<!--
+		游戏卡片：上面封面图，下面文字（游戏名 / 介绍）。
+		DataContext 是 GameViewModel；没配封面图时显示占位图。
+		边线颜色与悬停高亮由使用方（GameSessionView 的 card 按钮）设置。
+	-->
+	<Border Name="PART_Card"
+			CornerRadius="14"
+			ClipToBounds="True"
+			Background="{DynamicResource SukiCardBackground}"
+			BorderThickness="1">
+		<Border.Transitions>
+			<Transitions>
+				<BrushTransition Property="BorderBrush" Duration="0:0:0.15" />
+			</Transitions>
+		</Border.Transitions>
+		<StackPanel>
+
+			<!-- 上面：封面图片 -->
+			<Panel Height="120">
+				<Border Background="{DynamicResource SukiStrongBackground}" IsVisible="{Binding !HasCoverImage}">
+					<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+						<i:MaterialIcon Kind="GamepadVariantOutline" Width="40" Height="40" Opacity="0.35"
+										HorizontalAlignment="Center" />
+						<TextBlock Text="暂无封面" FontSize="11" Opacity="0.5" HorizontalAlignment="Center" />
+					</StackPanel>
+				</Border>
+
+				<Image Source="{Binding CoverImage}" Stretch="UniformToFill" IsVisible="{Binding HasCoverImage}" />
+			</Panel>
+
+			<!-- 下面：游戏名 + 介绍 -->
+			<StackPanel Margin="14,12,14,14" Spacing="6">
+				<TextBlock Text="{Binding Name}"
+						   FontSize="15"
+						   FontWeight="DemiBold"
+						   MaxLines="1"
+						   TextTrimming="CharacterEllipsis" />
+
+				<TextBlock Text="{Binding Description}"
+						   FontSize="12"
+						   Opacity="0.7"
+						   MinHeight="32"
+						   MaxLines="2"
+						   TextWrapping="Wrap"
+						   TextTrimming="CharacterEllipsis" />
+			</StackPanel>
+
+		</StackPanel>
+	</Border>
+</UserControl>

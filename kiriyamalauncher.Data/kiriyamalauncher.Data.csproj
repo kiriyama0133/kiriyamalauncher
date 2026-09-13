@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Optimize>true</Optimize>
+    <Description>Data tier of application.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\FlatColors.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\FlatColors.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RunnethOverStudio.AppToolkit" Version="1.0.6" />
+    <!--ZeroTier.Sockets 会把一份只读的示例源码当作 contentFile 复制到输出目录，排除该资产类型，避免污染输出与发布目录。-->
+    <PackageReference Include="ZeroTier.Sockets" Version="1.8.4" ExcludeAssets="contentFiles" />
+  </ItemGroup>
+
+</Project>

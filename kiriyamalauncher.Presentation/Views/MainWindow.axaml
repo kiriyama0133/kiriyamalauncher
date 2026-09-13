@@ -1,0 +1,231 @@
+<sukiUi:SukiWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+        xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+        xmlns:i="using:Material.Icons.Avalonia"
+        x:Class="kiriyamalauncher.Presentation.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+		mc:Ignorable="d" d:DesignWidth="1366" d:DesignHeight="768"
+		MinWidth="1100" MinHeight="415"
+		Width="1100" Height="619"
+        xmlns:v="clr-namespace:kiriyamalauncher.Presentation.Views"
+        WindowStartupLocation="CenterScreen"
+        Topmost="{Binding IsPinned}"
+		x:Name="Win"
+        Icon="/Base/Assets/transparent.ico">
+
+	<sukiUi:SukiWindow.Hosts>
+		<!-- 右下角的 toast 宿主：通知统一从这里弹出。 -->
+		<sukiUi:SukiToastHost Manager="{Binding ToastManager}" Position="BottomRight" />
+		<sukiUi:SukiDialogHost Manager="{Binding DialogManager}" />
+	</sukiUi:SukiWindow.Hosts>
+
+	<sukiUi:SukiWindow.Styles>
+		<!--
+			标题栏左侧的返回按钮：
+			默认只显示图标，指针悬停时展开出「返回」文字，并显示一圈边线。
+		-->
+		<Style Selector="Button.backButton">
+			<Setter Property="Cursor" Value="Hand" />
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderThickness" Value="1" />
+			<Setter Property="BorderBrush" Value="Transparent" />
+			<Setter Property="CornerRadius" Value="10" />
+			<Setter Property="Height" Value="25" />
+			<Setter Property="Padding" Value="6,0" />
+			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+		</Style>
+
+		<Style Selector="Button.backButton:pointerover">
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor}" />
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.backButton:pressed, Button.backButton:pressed:pointerover">
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<!-- 账号按钮（登录 / 昵称）：手型指针 + 悬停边线，和返回按钮一致。 -->
+		<Style Selector="Button.accountButton">
+			<Setter Property="Cursor" Value="Hand" />
+			<Setter Property="BorderThickness" Value="1" />
+			<Setter Property="BorderBrush" Value="Transparent" />
+			<Setter Property="CornerRadius" Value="10" />
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.accountButton:pointerover">
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor}" />
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.accountButton:pressed, Button.accountButton:pressed:pointerover">
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.backButton TextBlock.backLabel">
+			<Setter Property="Width" Value="0" />
+			<Setter Property="Opacity" Value="0" />
+			<Setter Property="ClipToBounds" Value="True" />
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Width" Duration="0:0:0.18" />
+					<DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+				</Transitions>
+			</Setter>
+		</Style>
+
+		<Style Selector="Button.backButton:pointerover TextBlock.backLabel">
+			<Setter Property="Width" Value="34" />
+			<Setter Property="Opacity" Value="1" />
+		</Style>
+	</sukiUi:SukiWindow.Styles>
+
+	<sukiUi:SukiWindow.LogoContent>
+		<Panel>
+			<!-- 默认显示应用图标；进入游戏板块等「可返回」的页面时，换成返回按钮。 -->
+			<i:MaterialIcon Kind="LanConnect"
+							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							VerticalAlignment="Center"
+							Foreground="{DynamicResource SukiPrimaryColor}"
+							IsVisible="{Binding !ActivePage.CanGoBack}" />
+
+			<!-- 返回按钮：默认只有图标，悬停时展开「返回」文字并显示边线。 -->
+			<Button Classes="Basic NoPressedAnimation backButton"
+					IsVisible="{Binding ActivePage.CanGoBack}"
+					Command="{Binding ActivePage.GoBackCommand}"
+					ToolTip.Tip="返回上一层">
+				<StackPanel Orientation="Horizontal" Spacing="0">
+					<TextBlock Classes="backLabel" Text="返回" FontSize="13" VerticalAlignment="Center" />
+					<i:MaterialIcon Kind="ArrowLeft"
+								   Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+								   Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+								   VerticalAlignment="Center" />
+				</StackPanel>
+			</Button>
+		</Panel>
+	</sukiUi:SukiWindow.LogoContent>
+
+	<sukiUi:SukiWindow.RightWindowTitleBarControls>
+		<!--
+			SukiUI 的右侧控件面板用的是 FlowDirectionOpposite（LTR 下等价于 RTL），
+			子项顺序会被反过来；这里用一个左到右的 StackPanel 包住，保证账号按钮在最左边。
+		-->
+		<StackPanel Orientation="Horizontal" Spacing="7" FlowDirection="LeftToRight">
+
+		<!-- 未登录：登录按钮；登录后：显示昵称（可退出登录）。 -->
+		<Button Classes="Basic NoPressedAnimation Rounded accountButton" Height="25" Padding="8,0" Margin="0,0,4,0"
+				Command="{Binding OpenSignInCommand}"
+				ToolTip.Tip="登录账号"
+				IsVisible="{Binding !IsSignedIn}">
+			<StackPanel Orientation="Horizontal" Spacing="6">
+				<TextBlock Text="登录" FontSize="12" VerticalAlignment="Center" />
+			</StackPanel>
+		</Button>
+
+		<Button Classes="Basic NoPressedAnimation Rounded accountButton" Height="25" Padding="8,0" Margin="0,0,4,0"
+				ToolTip.Tip="当前账号"
+				IsVisible="{Binding IsSignedIn}">
+			<StackPanel Orientation="Horizontal" Spacing="6">
+				<TextBlock Text="{Binding AccountText}" FontSize="12" VerticalAlignment="Center" />
+			</StackPanel>
+			<Button.Flyout>
+				<!-- 参照 demo 顶部菜单栏的写法：SukiUI 的 MenuFlyout + 带图标的 MenuItem。 -->
+				<MenuFlyout>
+					<MenuItem Header="{Binding AccountText}" IsEnabled="False">
+						<MenuItem.Icon>
+							<i:MaterialIcon Kind="AccountOutline" />
+						</MenuItem.Icon>
+					</MenuItem>
+
+					<Separator />
+
+					<MenuItem Header="退出登录" Command="{Binding SignOutCommand}">
+						<MenuItem.Icon>
+							<i:MaterialIcon Kind="Logout" />
+						</MenuItem.Icon>
+					</MenuItem>
+				</MenuFlyout>
+			</Button.Flyout>
+		</Button>
+
+		<Button Classes="Basic Rounded WindowControlsButton"
+				Command="{Binding TogglePinCommand}"
+				ToolTip.Tip="固定在最上层">
+			<i:MaterialIcon Kind="{Binding PinIcon}"
+							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Foreground="{DynamicResource SukiText}" />
+		</Button>
+
+		<Button Classes="Basic Rounded WindowControlsButton" ToolTip.Tip="外观：明暗模式与配色主题">
+			<i:MaterialIcon Kind="PaletteOutline"
+							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Foreground="{DynamicResource SukiText}" />
+
+			<Button.Flyout>
+				<Flyout Placement="BottomEdgeAlignedRight">
+					<Border Width="300" CornerRadius="15" Padding="18"
+							Background="{DynamicResource SukiCardBackground}"
+							BorderBrush="{DynamicResource SukiLightBorderBrush}"
+							BorderThickness="1"
+							BoxShadow="{DynamicResource SukiPopupShadow}">
+						<StackPanel Spacing="16">
+
+							<TextBlock Text="外观" FontSize="16" FontWeight="DemiBold" />
+
+							<StackPanel Spacing="8">
+								<TextBlock Text="明暗模式" FontSize="12" Foreground="{DynamicResource SukiLowText}" />
+								<StackPanel Orientation="Horizontal" Spacing="16">
+									<RadioButton GroupName="Appearance" Content="跟随系统"
+												 IsChecked="{Binding Appearance.IsSystemTheme, Mode=TwoWay}" />
+									<RadioButton GroupName="Appearance" Content="浅色"
+												 IsChecked="{Binding Appearance.IsLightTheme, Mode=TwoWay}" />
+									<RadioButton GroupName="Appearance" Content="深色"
+												 IsChecked="{Binding Appearance.IsDarkTheme, Mode=TwoWay}" />
+								</StackPanel>
+							</StackPanel>
+
+							<StackPanel Spacing="8">
+								<TextBlock Text="配色主题" FontSize="12" Foreground="{DynamicResource SukiLowText}" />
+								<ItemsControl ItemsSource="{Binding Appearance.ColorThemes}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel />
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate DataType="{x:Type vm:ColorThemeOption}">
+											<Button Classes="Basic" Width="42" Height="42" Padding="0" CornerRadius="100"
+													Command="{Binding ApplyCommand}"
+													ToolTip.Tip="{Binding DisplayName}">
+												<Panel>
+													<Border Width="22" Height="22" CornerRadius="100"
+															Background="{Binding PrimaryBrush}" />
+													<Border Width="32" Height="32" CornerRadius="100" BorderThickness="2"
+															BorderBrush="{DynamicResource SukiPrimaryColor}"
+															IsVisible="{Binding IsActive}" />
+												</Panel>
+											</Button>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</StackPanel>
+
+						</StackPanel>
+					</Border>
+				</Flyout>
+			</Button.Flyout>
+		</Button>
+		</StackPanel>
+	</sukiUi:SukiWindow.RightWindowTitleBarControls>
+
+    <v:MainView Grid.Row="1" />
+    
+</sukiUi:SukiWindow>
