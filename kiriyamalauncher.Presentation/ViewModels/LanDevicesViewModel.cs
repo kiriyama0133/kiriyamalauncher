@@ -1,0 +1,307 @@
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using kiriyamalauncher.Data;
+using kiriyamalauncher.Business.Modules.GameSession.ApplicationServices;
+using kiriyamalauncher.Business.Modules.GameSession.DTOs;
+using kiriyamalauncher.Presentation.Base.Services.Notifications;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+
+namespace kiriyamalauncher.Presentation.ViewModels;
+
+/// <summary>
+/// 局域网设备卡片：轮询同一个虚拟局域网，把发现到的设备列出来。
+///
+/// 进入游戏板块时开始自动发现，离开时停止；「扫描一次」可以手动刷新一轮。
+/// </summary>
+public partial class LanDevicesViewModel : ObservableObject
+{
+    private static readonly TimeSpan SCAN_INTERVAL = TimeSpan.FromSeconds(5);
+
+    private readonly IVirtualLanDiscoveryService _discovery;
+    private readonly ILanTunnelService _tunnelService;
+    private readonly IAppNotifier _notifier;
+    private readonly ILogger<LanDevicesViewModel> _logger;
+
+    /// <summary>自动开启只提示一次，避免每次扫描都弹 toast。</summary>
+    private bool _autoTunnelNoticeShown;
+
+    /// <summary>本机虚拟 IP。</summary>
+    [ObservableProperty]
+    private string _localVirtualIp = string.Empty;
+
+    /// <summary>本机虚拟网段前缀（例如 10.74.203.）。</summary>
+    [ObservableProperty]
+    private string _localNetworkPrefix = string.Empty;
+
+    /// <summary>是否有操作在进行。</summary>
+    [ObservableProperty]
+    private bool _isBusy;
+
+    /// <summary>状态文字。</summary>
+    [ObservableProperty]
+    private string _statusText = "点「扫描一次」开始查找同一虚拟局域网里的设备。";
+
+    /// <summary>选中的设备。</summary>
+    [ObservableProperty]
+    private VirtualLanPeerRow? _selectedPeer;
+
+    /// <summary>发现到的设备。</summary>
+    public ObservableCollection<VirtualLanPeerRow> Peers { get; } = [];
+
+    public LanDevicesViewModel(
+        IVirtualLanDiscoveryService discovery,
+        ILanTunnelService tunnelService,
+        IAppNotifier notifier,
+        ILogger<LanDevicesViewModel> logger)
+    {
+        _discovery = discovery;
+        _tunnelService = tunnelService;
+        _notifier = notifier;
+        _logger = logger;
+
+        _discovery.ScanCompleted += OnScanCompleted;
+        _discovery.ScanningChanged += OnScanningChanged;
+        _discovery.PeerDiscovered += OnPeerDiscovered;
+        _tunnelService.StatusChanged += OnTunnelStatusChanged;
+
+        RefreshLocalInfo();
+    }
+
+    /// <summary>有设备。</summary>
+    public bool HasPeers => Peers.Count > 0;
+
+    /// <summary>可以扫描。</summary>
+    public bool CanScan => !IsBusy;
+
+    /// <summary>自动发现按钮上的文字。</summary>
+    public string ScanButtonText => IsScanning ? "停止发现" : "自动发现";
+
+    /// <summary>是否正在自动发现（直接读服务的状态，对话框里开关也能同步反映）。</summary>
+    public bool IsScanning => _discovery.IsScanning;
+
+    /// <summary>本机是否已经接入虚拟局域网。</summary>
+    public bool HasLocalVirtualIp => !string.IsNullOrWhiteSpace(LocalVirtualIp);
+
+    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanScan));
+
+    partial void OnLocalVirtualIpChanged(string value) => OnPropertyChanged(nameof(HasLocalVirtualIp));
+
+    /// <summary>进入游戏板块时调用：开始自动发现。</summary>
+    public void StartDiscovery()
+    {
+        RefreshLocalInfo();
+
+        if (_discovery.IsScanning)
+        {
+            return;
+        }
+
+        _discovery.StartScanning(SCAN_INTERVAL, NormalizePrefix());
+        StatusText = $"正在自动发现设备（每 {SCAN_INTERVAL.TotalSeconds:0} 秒一轮）……";
+    }
+
+    /// <summary>离开游戏板块时调用：停止自动发现。</summary>
+    public void StopDiscovery()
+    {
+        _discovery.StopScanning();
+        StatusText = "已停止自动发现。";
+    }
+
+    /// <summary>刷新本机虚拟 IP / 网段（连接状态变化时由页面调用）。</summary>
+    public void RefreshLocalInfo()
+    {
+        LocalVirtualIp = _discovery.LocalVirtualIp;
+        LocalNetworkPrefix = _discovery.LocalNetworkPrefix;
+    }
+
+    /// <summary>卡片上的「刷新」按钮。</summary>
+    [RelayCommand]
+    private void Refresh() => RefreshLocalInfo();
+
+    /// <summary>扫描一次。</summary>
+    [RelayCommand]
+    private async Task ScanOnceAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusText = "正在扫描……";
+
+        try
+        {
+            RefreshLocalInfo();
+
+            IReadOnlyList<VirtualLanPeer> peers = await _discovery.ScanOnceAsync(NormalizePrefix());
+            ApplyPeers(peers);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "扫描虚拟局域网设备失败。");
+            StatusText = $"扫描失败：{ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>开始 / 停止自动发现。</summary>
+    [RelayCommand]
+    private void ToggleScanning()
+    {
+        if (IsScanning)
+        {
+            StopDiscovery();
+            return;
+        }
+
+        StartDiscovery();
+    }
+
+    /// <summary>清空设备列表。</summary>
+    [RelayCommand]
+    private void ClearPeers()
+    {
+        _discovery.Clear();
+        Peers.Clear();
+        SelectedPeer = null;
+        StatusText = "已清空设备列表。";
+        OnPropertyChanged(nameof(HasPeers));
+    }
+
+    /// <summary>
+    /// 当前要互通的对端：列表里所有设备（多人时就是所有人）。
+    /// 注意这是「全网状」——每台机器都跟它发现到的其他机器互转，
+    /// 谁是房主都行，第 3、第 4 个人接进来也不用改配置。
+    /// </summary>
+    private List<string> CurrentPeerIps()
+    {
+        List<string> addresses = [];
+
+        foreach (VirtualLanPeerRow row in Peers)
+        {
+            if (!string.IsNullOrWhiteSpace(row.VirtualIp) && !addresses.Contains(row.VirtualIp))
+            {
+                addresses.Add(row.VirtualIp);
+            }
+        }
+
+        // 用户手动选了一台但列表里还没有（比如列表被清空了），至少把选中的那台带上。
+        if (addresses.Count == 0 && SelectedPeer is not null && !string.IsNullOrWhiteSpace(SelectedPeer.VirtualIp))
+        {
+            addresses.Add(SelectedPeer.VirtualIp);
+        }
+
+        return addresses;
+    }
+
+    /// <summary>
+    /// 发现有设备之后自动把隧道开起来。
+    ///
+    /// 隧道是「Hook ↔ 启动器」之间的管道服务端，忘了开的话游戏里的广播就只能被丢弃
+    /// （日志里会刷「出站帧被丢弃（管道已连接=0）」）。所以这里默认自动开，
+    /// 界面上不再提供手动开关 —— 用户不需要、也不应该关心它的存在。
+    /// </summary>
+    public void TryAutoStartTunnel()
+    {
+        // 先刷新一次本机虚拟 IP：刚连上网络时这里可能还是空的，
+        // 没有它就没法启动隧道（之前自动开启失败就是这个原因）。
+        RefreshLocalInfo();
+
+        // 已经在跑：把最新的对端列表同步过去就行（有人上线/下线都跟上）。
+        if (_tunnelService.IsRunning)
+        {
+            _tunnelService.UpdatePeers(CurrentPeerIps());
+            return;
+        }
+
+        // 没接上虚拟局域网就别开：隧道要靠它才能把包送出去。
+        if (string.IsNullOrWhiteSpace(LocalVirtualIp))
+        {
+            _logger.LogDebug("还没拿到本机虚拟 IP，暂时不自动开隧道。");
+            return;
+        }
+
+        _ = AutoStartTunnelAsync();
+    }
+
+    /// <summary>
+    /// 自动开隧道。注意这里**不要求已经发现设备**：隧道本身只是"Hook ↔ 启动器"的管道
+    /// 加上在虚拟网上按需开端口，对端可以晚点上线的。
+    /// </summary>
+    private async Task AutoStartTunnelAsync()
+    {
+        try
+        {
+            GameOperationResultDto result = await _tunnelService.StartAsync(LocalVirtualIp, CurrentPeerIps());
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("已自动开启游戏隧道（当前对端 {Count} 台）。", CurrentPeerIps().Count);
+
+                if (!_autoTunnelNoticeShown)
+                {
+                    _autoTunnelNoticeShown = true;
+                    _notifier.Success("游戏隧道已自动开启", "两台机器都这样开着，就能跨网络连局域网了。");
+                }
+            }
+            else
+            {
+                _logger.LogWarning("自动开启游戏隧道失败：{Message}", result.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "自动开启游戏隧道失败。");
+        }
+    }
+
+    /// <summary>隧道状态变化（目前只写日志，界面不再显示）。</summary>
+    private void OnTunnelStatusChanged(object? sender, string message)
+        => _logger.LogDebug("隧道状态：{Message}", message);
+
+    /// <summary>扫描结果来自后台线程，转回 UI 线程再更新列表。</summary>
+    private void OnScanCompleted(object? sender, IReadOnlyList<VirtualLanPeer> peers)
+        => Dispatcher.UIThread.Post(() => ApplyPeers(peers));
+
+    /// <summary>发现一台新设备（可能发生在两轮扫描之间）：立刻确保隧道是开着的。</summary>
+    private void OnPeerDiscovered(object? sender, VirtualLanPeer peer)
+        => Dispatcher.UIThread.Post(TryAutoStartTunnel);
+
+    /// <summary>轮询状态可能被对话框那边改掉，这里同步一下按钮显示。</summary>
+    private void OnScanningChanged(object? sender, EventArgs e)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            OnPropertyChanged(nameof(IsScanning));
+            OnPropertyChanged(nameof(ScanButtonText));
+        });
+
+    private void ApplyPeers(IReadOnlyList<VirtualLanPeer> peers)
+    {
+        VirtualLanPeerRow.Apply(Peers, peers);
+
+        StatusText = peers.Count == 0
+            ? "还没有发现在线设备（对方也要运行本程序并接入同一个网络）。"
+            : $"{_discovery.TransportDescription} · 在线设备：{peers.Count} 台。";
+
+        OnPropertyChanged(nameof(HasPeers));
+
+        // 每次扫描结束都确保隧道是开着的（隧道要不要开只看"本机有没有虚拟 IP"，
+        // 不依赖有没有发现设备 —— 设备可能是后面才上线的）。
+        TryAutoStartTunnel();
+    }
+
+    private string? NormalizePrefix()
+    {
+        string prefix = LocalNetworkPrefix.Trim();
+        return prefix.Length == 0 ? null : prefix;
+    }
+}

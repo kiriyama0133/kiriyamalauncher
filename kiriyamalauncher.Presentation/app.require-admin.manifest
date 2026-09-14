@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <!--
+    Release / 发布产物专用清单：默认以管理员身份运行（UAC 提权）。
+    原因：应用要往游戏进程里注入联机 Hook、并操作 ZeroTier 虚拟网卡，这些都需要管理员权限。
+    开发（Debug）不套这份清单，`dotnet run` 不会每次弹 UAC —— 见 csproj 里对
+    ApplicationManifest 的两段条件设置。
+  -->
+  <assemblyIdentity version="1.0.0.0" name="kiriyamalauncher.Presentation"/>
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <!-- uiAccess 必须为 false：true 要求程序放在 Program Files 且带受信任签名。 -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>

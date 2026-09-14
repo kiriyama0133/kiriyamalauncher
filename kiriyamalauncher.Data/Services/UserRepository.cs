@@ -1,25 +1,22 @@
 using kiriyamalauncher.Data.Entities;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using RunnethOverStudio.AppToolkit.Core;
-using RunnethOverStudio.AppToolkit.Modules.DataAccess;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace kiriyamalauncher.Data;
 
 /// <summary>
-/// 基于 SQLite 的用户仓储。
+/// 用户账号仓储（Users 表）。
 ///
-/// 表结构在这里按需创建（CREATE TABLE IF NOT EXISTS），并对旧库自动补列。
-/// 注意：测试阶段只保存账号与偏好信息，密码一律不落库。
+/// 说明：老版本的 Users 表里混着偏好列（FontSize / 主题 / ZeroTier 等）。
+/// 现在偏好已经搬到独立的 Preferences 表，这里只读写账号字段，
+/// 老列保留不动，方便 <see cref="UserPreferencesRepository"/> 首次启动时把它们迁移过去。
 /// </summary>
 public class UserRepository : IUserRepository
 {
-    /// <summary>表结构；升级新增列时同时补进 <see cref="EnsureSchemaAsync"/> 的补列清单。</summary>
     private const string USERS_TABLE_SQL = """
         CREATE TABLE IF NOT EXISTS Users (
             Id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,56 +24,42 @@ public class UserRepository : IUserRepository
             LoginName     TEXT    NOT NULL DEFAULT '',
             Email         TEXT    NOT NULL DEFAULT '',
             ProfileUpdatedAt TEXT NULL,
-            CreatedAt     TEXT    NULL,
-            FontSize      REAL    NOT NULL DEFAULT 14,
-            BaseTheme     TEXT    NOT NULL DEFAULT 'Default',
-            ColorTheme    TEXT    NOT NULL DEFAULT 'Blue',
-            MoonServerIp  TEXT    NOT NULL DEFAULT '',
-            ZeroTierNetworkId TEXT NOT NULL DEFAULT '',
-            ZeroTierConnectionMode TEXT NOT NULL DEFAULT 'Official');
+            CreatedAt     TEXT    NULL);
         """;
 
-    /// <summary>旧库需要补的列（列名 → 建列语句片段）。</summary>
+    /// <summary>老库需要补的账号列。</summary>
     private static readonly IReadOnlyDictionary<string, string> OPTIONAL_COLUMNS = new Dictionary<string, string>
     {
-        ["Email"] = "Email TEXT NOT NULL DEFAULT ''",
-        ["MoonServerIp"] = "MoonServerIp TEXT NOT NULL DEFAULT ''",
-        ["ZeroTierNetworkId"] = "ZeroTierNetworkId TEXT NOT NULL DEFAULT ''",
-        ["ZeroTierConnectionMode"] = "ZeroTierConnectionMode TEXT NOT NULL DEFAULT 'Official'"
+        ["Email"] = "Email TEXT NOT NULL DEFAULT ''"
     };
 
-    private const string SELECT_SQL = """
-        SELECT Id, Nickname, LoginName, Email, MoonServerIp, ZeroTierNetworkId, ZeroTierConnectionMode,
-               ProfileUpdatedAt, CreatedAt, FontSize, BaseTheme, ColorTheme
-        FROM Users ORDER BY Id LIMIT 1;
-        """;
+    private const string SELECT_COLUMNS = "Id, Nickname, LoginName, Email, ProfileUpdatedAt, CreatedAt";
 
-    private readonly IDatabaseInitializer _databaseInitializer;
+    private readonly SqliteDatabase _database;
     private readonly ILogger<UserRepository> _logger;
-    private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-    private string? _connectionString;
-
-    public UserRepository(IDatabaseInitializer databaseInitializer, ILogger<UserRepository> logger)
+    public UserRepository(SqliteDatabase database, ILogger<UserRepository> logger)
     {
-        _databaseInitializer = databaseInitializer;
+        _database = database;
         _logger = logger;
     }
 
+    /// <inheritdoc />
     public async Task<User> GetOrCreateCurrentAsync(CancellationToken cancellationToken = default)
     {
-        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken);
+        await using SqliteConnection connection = await _database.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
 
-        await using SqliteCommand selectCommand = connection.CreateCommand();
-        selectCommand.CommandText = SELECT_SQL;
-
-        await using SqliteDataReader reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
+        await using (SqliteCommand selectCommand = connection.CreateCommand())
         {
-            return ReadUser(reader);
-        }
+            selectCommand.CommandText = $"SELECT {SELECT_COLUMNS} FROM Users ORDER BY Id LIMIT 1;";
 
-        await reader.DisposeAsync();
+            await using SqliteDataReader reader = await selectCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                return ReadUser(reader);
+            }
+        }
 
         // 默认是「未登录」状态：账号信息为空，等用户登录 / 注册后再写入。
         User newUser = new()
@@ -84,54 +67,75 @@ public class UserRepository : IUserRepository
             Nickname = string.Empty,
             LoginName = string.Empty,
             Email = string.Empty,
-            MoonServerIp = string.Empty,
             CreatedAt = DateTime.Now,
             ProfileUpdatedAt = DateTime.Now
         };
 
         newUser.Id = await InsertAsync(connection, newUser, cancellationToken);
-        _logger.LogInformation("已创建默认用户记录（Id = {Id}）。", newUser.Id);
+        _logger.LogInformation("已创建默认账号记录（Id = {Id}）。", newUser.Id);
 
         return newUser;
     }
 
+    /// <inheritdoc />
+    public async Task<User?> FindByLoginAsync(string loginNameOrEmail, CancellationToken cancellationToken = default)
+    {
+        string identifier = loginNameOrEmail.Trim();
+        if (identifier.Length == 0)
+        {
+            return null;
+        }
+
+        await using SqliteConnection connection = await _database.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {SELECT_COLUMNS} FROM Users
+            WHERE LoginName = $identifier COLLATE NOCASE OR Email = $identifier COLLATE NOCASE
+            ORDER BY Id LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$identifier", identifier);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadUser(reader) : null;
+    }
+
+    /// <inheritdoc />
     public async Task SaveAsync(User user, CancellationToken cancellationToken = default)
     {
-        await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken);
+        await using SqliteConnection connection = await _database.OpenAsync(cancellationToken);
+        await EnsureSchemaAsync(connection, cancellationToken);
 
-        await using SqliteCommand updateCommand = connection.CreateCommand();
-        updateCommand.CommandText = """
-            UPDATE Users
-            SET Nickname = $nickname,
-                LoginName = $loginName,
-                Email = $email,
-                ProfileUpdatedAt = $profileUpdatedAt,
-                FontSize = $fontSize,
-                BaseTheme = $baseTheme,
-                ColorTheme = $colorTheme,
-                MoonServerIp = $moonServerIp,
-                ZeroTierNetworkId = $zeroTierNetworkId,
-                ZeroTierConnectionMode = $zeroTierConnectionMode
-            WHERE Id = $id;
-            """;
-        BindUser(updateCommand, user);
-        updateCommand.Parameters.AddWithValue("$id", user.Id ?? 0);
-
-        int affectedRows = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
-        if (affectedRows == 0)
+        if (user.Id is { } id)
         {
-            user.Id = await InsertAsync(connection, user, cancellationToken);
+            await using SqliteCommand updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = """
+                UPDATE Users
+                SET Nickname = $nickname,
+                    LoginName = $loginName,
+                    Email = $email,
+                    ProfileUpdatedAt = $profileUpdatedAt
+                WHERE Id = $id;
+                """;
+            BindUser(updateCommand, user);
+            updateCommand.Parameters.AddWithValue("$id", id);
+
+            if (await updateCommand.ExecuteNonQueryAsync(cancellationToken) > 0)
+            {
+                return;
+            }
         }
+
+        user.Id = await InsertAsync(connection, user, cancellationToken);
     }
 
     private static async Task<uint> InsertAsync(SqliteConnection connection, User user, CancellationToken cancellationToken)
     {
         await using SqliteCommand insertCommand = connection.CreateCommand();
         insertCommand.CommandText = """
-            INSERT INTO Users (Nickname, LoginName, Email, MoonServerIp, ZeroTierNetworkId, ZeroTierConnectionMode,
-                               ProfileUpdatedAt, CreatedAt, FontSize, BaseTheme, ColorTheme)
-            VALUES ($nickname, $loginName, $email, $moonServerIp, $zeroTierNetworkId, $zeroTierConnectionMode,
-                    $profileUpdatedAt, $createdAt, $fontSize, $baseTheme, $colorTheme);
+            INSERT INTO Users (Nickname, LoginName, Email, ProfileUpdatedAt, CreatedAt)
+            VALUES ($nickname, $loginName, $email, $profileUpdatedAt, $createdAt);
             SELECT last_insert_rowid();
             """;
         BindUser(insertCommand, user);
@@ -146,13 +150,7 @@ public class UserRepository : IUserRepository
         command.Parameters.AddWithValue("$nickname", user.Nickname);
         command.Parameters.AddWithValue("$loginName", user.LoginName);
         command.Parameters.AddWithValue("$email", user.Email);
-        command.Parameters.AddWithValue("$moonServerIp", user.MoonServerIp);
-        command.Parameters.AddWithValue("$zeroTierNetworkId", user.ZeroTierNetworkId);
-        command.Parameters.AddWithValue("$zeroTierConnectionMode", user.ZeroTierConnectionMode);
         command.Parameters.AddWithValue("$profileUpdatedAt", ToDbValue(user.ProfileUpdatedAt));
-        command.Parameters.AddWithValue("$fontSize", user.FontSize);
-        command.Parameters.AddWithValue("$baseTheme", user.BaseTheme);
-        command.Parameters.AddWithValue("$colorTheme", user.ColorTheme);
     }
 
     private static object ToDbValue(DateTime? value) => value is null ? DBNull.Value : value.Value.ToString("O");
@@ -163,40 +161,11 @@ public class UserRepository : IUserRepository
         Nickname = reader.GetString(1),
         LoginName = reader.GetString(2),
         Email = reader.GetString(3),
-        MoonServerIp = reader.GetString(4),
-        ZeroTierNetworkId = reader.GetString(5),
-        ZeroTierConnectionMode = reader.GetString(6),
-        ProfileUpdatedAt = reader.IsDBNull(7) ? null : DateTime.Parse(reader.GetString(7)),
-        CreatedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8)),
-        FontSize = reader.GetDouble(9),
-        BaseTheme = reader.GetString(10),
-        ColorTheme = reader.GetString(11)
+        ProfileUpdatedAt = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4)),
+        CreatedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5))
     };
 
-    private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
-    {
-        if (_connectionString is null)
-        {
-            await _connectionLock.WaitAsync(cancellationToken);
-            try
-            {
-                _connectionString ??= BuildConnectionString();
-            }
-            finally
-            {
-                _connectionLock.Release();
-            }
-        }
-
-        SqliteConnection connection = new(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await EnsureSchemaAsync(connection, cancellationToken);
-
-        return connection;
-    }
-
-    /// <summary>建表；如果是从旧版本升级上来的库，补上缺失的列。</summary>
+    /// <summary>建表；老库缺列时补上。</summary>
     private static async Task EnsureSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
         await using (SqliteCommand createCommand = connection.CreateCommand())
@@ -205,18 +174,7 @@ public class UserRepository : IUserRepository
             await createCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        HashSet<string> existingColumns = new(StringComparer.OrdinalIgnoreCase);
-
-        await using (SqliteCommand pragmaCommand = connection.CreateCommand())
-        {
-            pragmaCommand.CommandText = "PRAGMA table_info(Users);";
-            await using SqliteDataReader reader = await pragmaCommand.ExecuteReaderAsync(cancellationToken);
-
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                existingColumns.Add(reader.GetString(1));
-            }
-        }
+        HashSet<string> existingColumns = await SqliteSchema.GetColumnsAsync(connection, "Users", cancellationToken);
 
         foreach ((string columnName, string columnDefinition) in OPTIONAL_COLUMNS)
         {
@@ -229,33 +187,5 @@ public class UserRepository : IUserRepository
             alterCommand.CommandText = $"ALTER TABLE Users ADD COLUMN {columnDefinition};";
             await alterCommand.ExecuteNonQueryAsync(cancellationToken);
         }
-    }
-
-    private string BuildConnectionString()
-    {
-        _databaseInitializer.InitializeDatabase();
-
-        ProcessResult<string> pathResult = _databaseInitializer.GetDBPath();
-        string path = pathResult.ValueOrDefault ?? string.Empty;
-
-        // 工具箱返回的可能是数据库文件，也可能只是存放目录。
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kiriyamalauncher", "data.db");
-        }
-        else if (Directory.Exists(path) || !Path.HasExtension(path))
-        {
-            path = Path.Combine(path, "data.db");
-        }
-
-        string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        _logger.LogInformation("SQLite 数据库：{Path}", path);
-
-        return new SqliteConnectionStringBuilder { DataSource = path }.ToString();
     }
 }

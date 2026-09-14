@@ -6,8 +6,10 @@ using RunnethOverStudio.AppToolkit.Modules.ComponentModel;
 using SukiUI.Toasts;
 using SukiUI.Dialogs;
 using Material.Icons;
+using kiriyamalauncher.Data;
 using kiriyamalauncher.Presentation.Base.Services.Preferences;
 using kiriyamalauncher.Presentation.Base.Services.Notifications;
+using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 
@@ -29,10 +31,10 @@ public partial class MainViewModel : BaseViewModel
     public ISukiDialogManager DialogManager { get; }
 
     /// <summary>是否已登录（用昵称判断）。</summary>
-    public bool IsSignedIn => !string.IsNullOrWhiteSpace(_snapshot.Profile.Nickname);
+    public bool IsSignedIn => !string.IsNullOrWhiteSpace(_snapshot.User.Nickname);
 
     /// <summary>标题栏显示的文字：未登录显示「登录」，登录后显示昵称。</summary>
-    public string AccountText => IsSignedIn ? _snapshot.Profile.Nickname : "登录";
+    public string AccountText => IsSignedIn ? _snapshot.User.Nickname : "登录";
 
     private readonly IAppSnapshot _snapshot;
     private readonly IAppNotifier _notifier;
@@ -93,6 +95,21 @@ public partial class MainViewModel : BaseViewModel
                 dialog,
                 _snapshot,
                 Ioc.Default.GetRequiredService<Base.Services.Notifications.IAppNotifier>()))
+            .Dismiss().ByClickingBackground()
+            .TryShow();
+    }
+
+    /// <summary>打开「网络工具」对话框（虚拟局域网设备发现 + Ping 探测）。</summary>
+    [RelayCommand]
+    private void OpenNetworkTools()
+    {
+        DialogManager.CreateDialog()
+            .WithViewModel(dialog => new NetworkToolsDialogViewModel(
+                dialog,
+                Ioc.Default.GetRequiredService<IZeroTierService>(),
+                Ioc.Default.GetRequiredService<IVirtualLanDiscoveryService>(),
+                Ioc.Default.GetRequiredService<IAppNotifier>(),
+                Ioc.Default.GetRequiredService<ILogger<NetworkToolsDialogViewModel>>()))
             .Dismiss().ByClickingBackground()
             .TryShow();
     }

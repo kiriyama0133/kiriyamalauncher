@@ -34,7 +34,7 @@
 
 				<Border Classes="settingCard">
 					<StackPanel Spacing="12">
-						<TextBlock Text="字体大小" FontSize="15" FontWeight="DemiBold" />
+						<TextBlock Text="字体大小" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="DemiBold" />
 
 						<c:FontSizeControl Value="{Binding FontSize, Mode=TwoWay}"
 										   Minimum="{Binding MinimumFontSize}"
@@ -44,7 +44,7 @@
 
 				<Border Classes="settingCard">
 					<StackPanel Spacing="12">
-						<TextBlock Text="连接模式" FontSize="15" FontWeight="DemiBold" />
+						<TextBlock Text="连接模式" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="DemiBold" />
 
 						<!-- 切换 ZeroTier 的网络控制方式：官方控制器 / 自建控制器。 -->
 						<StackPanel Orientation="Horizontal" Spacing="10">
@@ -62,7 +62,7 @@
 
 				<Border Classes="settingCard">
 					<StackPanel Spacing="12">
-						<TextBlock Text="ZeroTier 网络 ID" FontSize="15" FontWeight="DemiBold" />
+						<TextBlock Text="ZeroTier 网络 ID" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="DemiBold" />
 
 						<!-- 输入框聚焦时显示「确认 / 取消」。 -->
 						<StackPanel Name="NetworkIdRow" Spacing="10"
@@ -71,7 +71,7 @@
 							<TextBox Text="{Binding ZeroTierNetworkId}" MaxLength="16"
 									 Watermark="16 位十六进制，例如 633e31d8a2724274" />
 
-							<TextBlock Text="{Binding NetworkIdError}" FontSize="12"
+							<TextBlock Text="{Binding NetworkIdError}" FontSize="{DynamicResource AppFontSizeSmall}"
 									   Foreground="{DynamicResource ErrorBrush}"
 									   IsVisible="{Binding HasNetworkIdError}" />
 
@@ -86,7 +86,7 @@
 
 				<Border Classes="settingCard">
 					<StackPanel Spacing="12">
-						<TextBlock Text="ZeroTier Moon 服务器" FontSize="15" FontWeight="DemiBold" />
+						<TextBlock Text="ZeroTier Moon 服务器" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="DemiBold" />
 
 						<!-- 输入框聚焦时显示「确认 / 取消」。 -->
 						<StackPanel Name="MoonServerRow" Spacing="10"
@@ -103,7 +103,7 @@
 						</StackPanel>
 
 						<TextBlock Classes="cardHint"
-								   Text="moon 节点 ID（zerotier-cli 输出的 10 位十六进制），留空则使用默认 moon。" />
+								   Text="moon 是自己部署的根节点，只在「自建控制器」模式下生效；填 zerotier-cli 输出的 10 位十六进制节点 ID。" />
 					</StackPanel>
 				</Border>
 

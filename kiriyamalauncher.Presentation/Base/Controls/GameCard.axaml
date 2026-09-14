@@ -32,7 +32,7 @@
 					<StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
 						<i:MaterialIcon Kind="GamepadVariantOutline" Width="40" Height="40" Opacity="0.35"
 										HorizontalAlignment="Center" />
-						<TextBlock Text="暂无封面" FontSize="11" Opacity="0.5" HorizontalAlignment="Center" />
+						<TextBlock Text="暂无封面" FontSize="{DynamicResource AppFontSizeSmall}" Opacity="0.5" HorizontalAlignment="Center" />
 					</StackPanel>
 				</Border>
 
@@ -42,13 +42,13 @@
 			<!-- 下面：游戏名 + 介绍 -->
 			<StackPanel Margin="14,12,14,14" Spacing="6">
 				<TextBlock Text="{Binding Name}"
-						   FontSize="15"
+						   FontSize="{DynamicResource AppFontSizeLarge}"
 						   FontWeight="DemiBold"
 						   MaxLines="1"
 						   TextTrimming="CharacterEllipsis" />
 
 				<TextBlock Text="{Binding Description}"
-						   FontSize="12"
+						   FontSize="{DynamicResource AppFontSizeSmall}"
 						   Opacity="0.7"
 						   MinHeight="32"
 						   MaxLines="2"

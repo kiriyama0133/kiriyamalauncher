@@ -22,6 +22,17 @@
 
 	<Application.Resources>
 		<FontFamily x:Key="ViewHeadingFont">avares://kiriyamalauncher.Presentation/Base/Assets/Fonts/akashi-font#Akashi</FontFamily>
+
+		<!--
+			界面字号：运行时由全局快照按用户偏好覆盖（AppSnapshot.ApplyFontSize），
+			这里的值只是默认值 / 设计器预览用。
+		-->
+		<x:Double x:Key="AppFontSizeSmall">12</x:Double>
+		<x:Double x:Key="AppFontSizeCompact">13</x:Double>
+		<x:Double x:Key="AppFontSizeNormal">14</x:Double>
+		<x:Double x:Key="AppFontSizeLarge">15</x:Double>
+		<x:Double x:Key="AppFontSizeSubtitle">18</x:Double>
+		<x:Double x:Key="AppFontSizeTitle">26</x:Double>
 	</Application.Resources>
 	
 </Application>

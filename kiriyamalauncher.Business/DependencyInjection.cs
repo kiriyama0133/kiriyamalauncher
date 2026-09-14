@@ -34,10 +34,13 @@ public static class DependencyInjection
         services.AddScoped<ISampleToolsService, SampleToolsService>();
 
         // Game session（游戏联机）.
-        services.AddScoped<IGameService, GameService>();
+        services.AddScoped<IGameService, GameService>()
+            .AddSingleton<IGameLaunchService, GameLaunchService>()
+            .AddSingleton<ILanTunnelService, LanTunnelService>();
 
-        // User profile（用户资料与偏好设置）.
-        services.AddSingleton<IUserProfileService, UserProfileService>();
+        // User profile（账号与界面偏好互相独立）.
+        services.AddSingleton<IUserService, UserService>()
+            .AddSingleton<IUserPreferencesService, UserPreferencesService>();
 
         return services;
     }

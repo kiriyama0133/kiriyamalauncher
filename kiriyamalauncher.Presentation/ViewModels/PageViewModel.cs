@@ -1,6 +1,7 @@
 using Material.Icons;
 using CommunityToolkit.Mvvm.Input;
 using RunnethOverStudio.AppToolkit.Modules.ComponentModel;
+using System.Threading.Tasks;
 
 namespace kiriyamalauncher.Presentation.ViewModels;
 
@@ -24,9 +25,10 @@ public abstract partial class PageViewModel : BaseViewModel
 
     /// <summary>返回上一层。标题栏左侧的返回按钮会调用它。</summary>
     [RelayCommand]
-    private void GoBack() => OnGoBack();
+    private Task GoBackAsync() => OnGoBackAsync();
 
-    protected virtual void OnGoBack()
-    {
-    }
+    /// <summary>
+    /// 返回动作的实现。子类可以覆盖它（例如返回前先弹一个确认框）。
+    /// </summary>
+    protected virtual Task OnGoBackAsync() => Task.CompletedTask;
 }

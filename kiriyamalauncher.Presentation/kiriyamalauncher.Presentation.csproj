@@ -9,6 +9,8 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <!-- 应用清单只在 Windows 目标下使用。 -->
     <ApplicationManifest Condition="'$(RuntimeIdentifier)' == '' or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">app.manifest</ApplicationManifest>
+    <!-- exe 图标（资源管理器 / 任务栏 / 快捷方式默认用它）。只在 Windows 目标下嵌入。 -->
+    <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">img.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 	<PublishSingleFile>true</PublishSingleFile>
 	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -24,6 +26,11 @@
 
     发布命令：dotnet publish kiriyamalauncher.Presentation -c Release -r win-x64
   -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and ('$(RuntimeIdentifier)' == '' or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win')))">
+    <!-- 发布产物默认以管理员身份运行（UAC 提权）：注入游戏进程 / 操作虚拟网卡需要管理员权限。 -->
+    <ApplicationManifest>app.require-admin.manifest</ApplicationManifest>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
@@ -46,8 +53,8 @@
     AOT 的符号文件（.pdb）加起来两百多 MB，发布包里不需要，发布完成后清掉。
     需要留着调试时删掉这个 Target 即可。
   -->
-  <!-- LinkNative 是 AOT 链路的最后一步（exe 与符号文件都是它产出的），所以要在它之后再清理。 -->
-  <Target Name="RemoveSymbolsFromPublish" AfterTargets="Publish;LinkNative" Condition="'$(Configuration)' == 'Release'">
+  <!-- IlcCompile 是 AOT 链路的最后一步（exe 与符号文件都是它产出的），所以要在它之后再清理。 -->
+  <Target Name="RemoveSymbolsFromPublish" AfterTargets="Publish;IlcCompile;LinkNative" Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
       <PublishSymbolsToRemove Include="$(PublishDir)**\*.pdb" />
     </ItemGroup>
@@ -74,6 +81,8 @@
     <Folder Include="Base\Styles\" />
     <Folder Include="Base\SerilogMemorySink\" />
     <AvaloniaResource Include="Base\Assets\**" />
+    <!-- 应用图标：窗口的 Icon 直接引用它（/img.ico），这样标题栏和任务栏都有图标。 -->
+    <AvaloniaResource Include="img.ico" />
   </ItemGroup>
 
   <ItemGroup>
@@ -87,6 +96,27 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      游戏联机组件：随应用一起发行，复制到输出目录（以及 publish 目录）的 Scripts/<gameId> 下。
+      hookdll64.dll 是 hookdll.dll 的副本（Link 只影响目标文件名）：
+      注入工具会按目标进程位数挑 DLL 名，两个名字都放上更稳。
+    -->
+    <Content Include="Scripts\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Scripts\civ6\hookdll.dll" Link="Scripts\civ6\hookdll64.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      开发 / 诊断工具（仓库根目录的 tools 文件夹）：一起打进输出与 publish 的 tools/ 下。
+      排除项：build 里的编译中间产物（.obj/.lib/.exp）、诊断运行产生的日志与标记文件。
+    -->
+    <Content Include="..\tools\**\*"
+             Exclude="..\tools\**\build\**\*;..\tools\**\civ6-hook-diag-*.log;..\tools\**\civ6-hook-diag-summary.txt;..\tools\**\civ6hook-diag-loaded.txt"
+             Link="tools\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AsyncAwaitBestPractices" Version="10.0.0" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
@@ -96,6 +126,8 @@
     <PackageReference Include="Deadpikle.AvaloniaProgressRing" Version="0.11.0" />
     <PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <!--崩溃排查用：把日志写到文件（内存日志在进程崩溃时拿不到）。-->
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="SukiUI" Version="7.0.1" />
     <PackageReference Include="Xaml.Behaviors.Avalonia" Version="12.0.5" />
   </ItemGroup>

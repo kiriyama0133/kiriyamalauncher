@@ -10,6 +10,7 @@ using SukiUI;
 using SukiUI.Enums;
 using SukiUI.Models;
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,35 +19,46 @@ namespace kiriyamalauncher.Presentation.Base.Services.Preferences;
 /// <summary>
 /// 全局快照读写器的默认实现。
 ///
-/// - <see cref="LoadAsync"/>：从 SQLite 取出用户资料与偏好，套用到界面（字号 + 主题）。
-/// - <see cref="UpdateFontSize"/>：先改界面（立即生效），再防抖写库；拖动滑块时不会疯狂写数据库。
-/// - 主题在标题栏外观面板里切换时，通过 SukiUI 的事件回写快照。
+/// - 账号与偏好分别来自两张表，互不影响；
+/// - 离散改动（主题色、明暗、ZeroTier、网络 ID）立即写库；
+/// - 字号会随滑块连续变化，所以单独做防抖；
+/// - 退出前调用 <see cref="FlushAsync"/> 保证最后的状态一定落库。
 /// </summary>
 public class AppSnapshot : IAppSnapshot
 {
-    /// <summary>写库防抖时间。</summary>
+    /// <summary>字号写库防抖时间。</summary>
     private static readonly TimeSpan SAVE_DEBOUNCE = TimeSpan.FromMilliseconds(600);
 
     private const double MIN_FONT_SIZE = 12d;
     private const double MAX_FONT_SIZE = 22d;
 
-    private readonly IUserProfileService _userProfileService;
+    private const string DEFAULT_COLOR_THEME = "Blue";
+    private const string DEFAULT_BASE_THEME = "Default";
+
+    private readonly IUserService _userService;
+    private readonly IUserPreferencesService _preferencesService;
     private readonly ILogger<AppSnapshot> _logger;
     private readonly SukiTheme _sukiTheme;
+    private readonly SemaphoreSlim _saveLock = new(1, 1);
 
-    private CancellationTokenSource? _debounceTokenSource;
+    private CancellationTokenSource? _fontSizeDebounce;
+    private bool _userDirty;
+    private bool _preferencesDirty;
 
-    public AppSnapshot(IUserProfileService userProfileService, ILogger<AppSnapshot> logger)
+    public AppSnapshot(
+        IUserService userService,
+        IUserPreferencesService preferencesService,
+        ILogger<AppSnapshot> logger)
     {
-        _userProfileService = userProfileService;
+        _userService = userService;
+        _preferencesService = preferencesService;
         _logger = logger;
-
         _sukiTheme = SukiTheme.GetInstance();
-        _sukiTheme.OnBaseThemeChanged += OnBaseThemeChanged;
-        _sukiTheme.OnColorThemeChanged += OnColorThemeChanged;
     }
 
-    public UserProfileDto Profile { get; private set; } = new();
+    public UserDto User { get; private set; } = new();
+
+    public UserPreferencesDto Preferences { get; private set; } = new();
 
     public bool IsLoaded { get; private set; }
 
@@ -56,107 +68,63 @@ public class AppSnapshot : IAppSnapshot
     {
         try
         {
-            Profile = await _userProfileService.GetOrCreateAsync();
-            NormalizeProfile();
-            ApplyProfile();
+            User = await _userService.GetOrCreateCurrentAsync();
+            Preferences = await _preferencesService.GetOrCreateAsync();
+
+            NormalizePreferences();
+            ApplyFontSize();
+            ApplyTheme();
+
             IsLoaded = true;
             RaiseChanged();
-            _logger.LogInformation("已恢复用户偏好：字号 {FontSize}，主题 {BaseTheme}/{ColorTheme}。", Profile.FontSize, Profile.BaseTheme, Profile.ColorTheme);
+
+            _logger.LogInformation(
+                "已恢复账号与偏好：昵称「{Nickname}」，字号 {FontSize}，主题 {BaseTheme}/{ColorTheme}，网络 {NetworkId}。",
+                User.Nickname, Preferences.FontSize, Preferences.BaseTheme, Preferences.ColorTheme, Preferences.ZeroTierNetworkId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "恢复用户偏好失败，使用默认值。");
+            _logger.LogError(ex, "恢复账号与偏好失败，使用默认值。");
         }
     }
 
     public void UpdateFontSize(double fontSize)
     {
         double clamped = Math.Clamp(Math.Round(fontSize), MIN_FONT_SIZE, MAX_FONT_SIZE);
-        if (Math.Abs(Profile.FontSize - clamped) < 0.01d)
+        if (Math.Abs(Preferences.FontSize - clamped) < 0.01d)
         {
             return;
         }
 
-        Profile.FontSize = clamped;
+        Preferences.FontSize = clamped;
         ApplyFontSize();
         RaiseChanged();
-        ScheduleSave();
+        _preferencesDirty = true;
+        ScheduleFontSizeSave();
     }
-
-    public async Task<bool> SignInAsync(string loginNameOrEmail, string password)
-    {
-        string identifier = loginNameOrEmail.Trim();
-
-        // 没有匹配的账号时按输入的名称登录（测试阶段不做真实鉴权，password 不参与）。
-        bool matched = string.Equals(Profile.LoginName, identifier, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(Profile.Email, identifier, StringComparison.OrdinalIgnoreCase);
-
-        if (!matched)
-        {
-            Profile.LoginName = identifier;
-            Profile.Nickname = identifier;
-        }
-
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        await SaveProfileAsync();
-
-        return matched;
-    }
-
-    public async Task RegisterAsync(string loginName, string nickname, string email, string password)
-    {
-        // 测试阶段：password 只用于界面校验，不写入数据库。
-        Profile.LoginName = loginName.Trim();
-        Profile.Nickname = string.IsNullOrWhiteSpace(nickname) ? Profile.LoginName : nickname.Trim();
-        Profile.Email = email.Trim();
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        await SaveProfileAsync();
-    }
-
-    public async Task SignOutAsync()
-    {
-        Profile.LoginName = string.Empty;
-        Profile.Nickname = string.Empty;
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        await SaveProfileAsync();
-    }
-
-    public Task SaveAsync() => SaveProfileAsync();
 
     public void UpdateMoonServerIp(string moonServerIp)
     {
         string value = moonServerIp.Trim();
-        if (string.Equals(Profile.MoonServerIp, value, StringComparison.Ordinal))
+        if (string.Equals(Preferences.MoonServerIp, value, StringComparison.Ordinal))
         {
             return;
         }
 
-        Profile.MoonServerIp = value;
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        ScheduleSave();
+        Preferences.MoonServerIp = value;
+        SavePreferencesImmediately("Moon 服务器");
     }
 
     public void UpdateZeroTierNetworkId(string networkId)
     {
         string value = networkId.Trim().ToLowerInvariant();
-        if (string.Equals(Profile.ZeroTierNetworkId, value, StringComparison.Ordinal))
+        if (string.Equals(Preferences.ZeroTierNetworkId, value, StringComparison.Ordinal))
         {
             return;
         }
 
-        Profile.ZeroTierNetworkId = value;
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        ScheduleSave();
+        Preferences.ZeroTierNetworkId = value;
+        SavePreferencesImmediately("ZeroTier 网络 ID");
     }
 
     public void UpdateZeroTierConnectionMode(string connectionMode)
@@ -165,35 +133,109 @@ public class AppSnapshot : IAppSnapshot
             ? ZeroTierSettings.SelfHostedController
             : ZeroTierSettings.OfficialController;
 
-        if (string.Equals(Profile.ZeroTierConnectionMode, value, StringComparison.Ordinal))
+        if (string.Equals(Preferences.ZeroTierConnectionMode, value, StringComparison.Ordinal))
         {
             return;
         }
 
-        Profile.ZeroTierConnectionMode = value;
-        Profile.ProfileUpdatedAt = DateTime.Now;
-
-        RaiseChanged();
-        ScheduleSave();
+        Preferences.ZeroTierConnectionMode = value;
+        SavePreferencesImmediately("ZeroTier 连接模式");
     }
 
-    /// <summary>
-    /// 补齐老库里的空值：没有网络 ID 时用默认网络，连接模式只接受两个已知取值。
-    /// （不额外写库，等用户的下一次改动一并落库。）
-    /// </summary>
-    private void NormalizeProfile()
+    public void UpdateBaseTheme(string baseTheme)
     {
-        if (!ZeroTierSettings.IsValidNetworkId(Profile.ZeroTierNetworkId))
+        string value = string.IsNullOrWhiteSpace(baseTheme) ? DEFAULT_BASE_THEME : baseTheme.Trim();
+        if (string.Equals(Preferences.BaseTheme, value, StringComparison.Ordinal))
         {
-            Profile.ZeroTierNetworkId = ZeroTierSettings.DefaultNetworkId;
+            return;
         }
 
-        Profile.ZeroTierConnectionMode = string.Equals(
-            Profile.ZeroTierConnectionMode,
-            ZeroTierSettings.SelfHostedController,
-            StringComparison.OrdinalIgnoreCase)
-            ? ZeroTierSettings.SelfHostedController
-            : ZeroTierSettings.OfficialController;
+        // 主题本身已经由 AppearanceViewModel 切换过了，这里只更新快照并落库。
+        Preferences.BaseTheme = value;
+        SavePreferencesImmediately("明暗模式");
+    }
+
+    public void UpdateColorTheme(string colorTheme)
+    {
+        string value = string.IsNullOrWhiteSpace(colorTheme) ? DEFAULT_COLOR_THEME : colorTheme.Trim();
+        if (string.Equals(Preferences.ColorTheme, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // 配色同样由 AppearanceViewModel 切换，这里只负责记录。
+        Preferences.ColorTheme = value;
+        SavePreferencesImmediately("配色主题");
+    }
+
+    public async Task<bool> SignInAsync(string loginNameOrEmail, string password)
+    {
+        string identifier = loginNameOrEmail.Trim();
+
+        // 测试阶段不做真实鉴权（password 不参与），只是看看账号库里有没有这条记录。
+        UserDto? existing = await _userService.FindByLoginAsync(identifier);
+
+        if (existing is not null)
+        {
+            User = existing;
+        }
+        else
+        {
+            User.Nickname = identifier;
+            User.LoginName = identifier;
+            User.ProfileUpdatedAt = DateTime.Now;
+            await SaveUserAsync();
+        }
+
+        RaiseChanged();
+
+        _logger.LogInformation("登录：{Identifier}（匹配到已有账号：{Matched}）。", identifier, existing is not null);
+
+        return existing is not null;
+    }
+
+    public async Task RegisterAsync(string loginName, string nickname, string email, string password)
+    {
+        // 测试阶段：password 只用于界面校验，不写入数据库。
+        User.LoginName = loginName.Trim();
+        User.Nickname = string.IsNullOrWhiteSpace(nickname) ? User.LoginName : nickname.Trim();
+        User.Email = email.Trim();
+        User.ProfileUpdatedAt = DateTime.Now;
+
+        await SaveUserAsync();
+        RaiseChanged();
+    }
+
+    public async Task SignOutAsync()
+    {
+        // 只清账号信息；偏好与账号无关，保持不动。
+        User.LoginName = string.Empty;
+        User.Nickname = string.Empty;
+        User.Email = string.Empty;
+        User.ProfileUpdatedAt = DateTime.Now;
+
+        await SaveUserAsync();
+        RaiseChanged();
+    }
+
+    public Task SaveAsync() => FlushAsync();
+
+    /// <summary>退出前调用：取消防抖并等待所有未落库的改动写完。</summary>
+    public async Task FlushAsync()
+    {
+        _fontSizeDebounce?.Cancel();
+        _fontSizeDebounce?.Dispose();
+        _fontSizeDebounce = null;
+
+        if (_preferencesDirty)
+        {
+            await SavePreferencesAsync();
+        }
+
+        if (_userDirty)
+        {
+            await SaveUserAsync();
+        }
     }
 
     /// <summary>Changed 事件统一在 UI 线程上触发。</summary>
@@ -209,13 +251,38 @@ public class AppSnapshot : IAppSnapshot
         }
     }
 
-    private void ApplyProfile()
+    /// <summary>补齐空值：老库里没有网络 ID / 连接模式时用默认值。</summary>
+    private void NormalizePreferences()
     {
-        ApplyFontSize();
-        ApplyTheme();
+        if (!ZeroTierSettings.IsValidNetworkId(Preferences.ZeroTierNetworkId))
+        {
+            Preferences.ZeroTierNetworkId = ZeroTierSettings.DefaultNetworkId;
+        }
+
+        Preferences.ZeroTierConnectionMode = string.Equals(
+            Preferences.ZeroTierConnectionMode,
+            ZeroTierSettings.SelfHostedController,
+            StringComparison.OrdinalIgnoreCase)
+            ? ZeroTierSettings.SelfHostedController
+            : ZeroTierSettings.OfficialController;
+
+        Preferences.FontSize = Math.Clamp(Math.Round(Preferences.FontSize), MIN_FONT_SIZE, MAX_FONT_SIZE);
+
+        if (string.IsNullOrWhiteSpace(Preferences.BaseTheme))
+        {
+            Preferences.BaseTheme = DEFAULT_BASE_THEME;
+        }
+
+        if (string.IsNullOrWhiteSpace(Preferences.ColorTheme))
+        {
+            Preferences.ColorTheme = DEFAULT_COLOR_THEME;
+        }
     }
 
-    /// <summary>套用字号：同时更新 SukiUI 的字号资源与窗口自身字号（子控件继承）。</summary>
+    /// <summary>
+    /// 套用字号：同时更新我们自己的界面资源、SukiUI/Avalonia 的字号资源以及窗口字号，
+    /// 视图里用 DynamicResource 引用这些键，所以改字号会立刻作用到整个界面。
+    /// </summary>
     private void ApplyFontSize()
     {
         if (Application.Current is null)
@@ -223,73 +290,91 @@ public class AppSnapshot : IAppSnapshot
             return;
         }
 
-        Application.Current.Resources["FontSizeNormal"] = Profile.FontSize;
-        Application.Current.Resources["FontSizeSmall"] = Math.Max(MIN_FONT_SIZE - 2d, Profile.FontSize - 1d);
-        Application.Current.Resources["FontSizeLarge"] = Profile.FontSize + 1d;
+        double fontSize = Preferences.FontSize;
 
+        // 我们自己的界面资源。
+        Application.Current.Resources["AppFontSizeSmall"] = Math.Max(MIN_FONT_SIZE - 2d, fontSize - 2d);
+        Application.Current.Resources["AppFontSizeCompact"] = Math.Max(MIN_FONT_SIZE - 1d, fontSize - 1d);
+        Application.Current.Resources["AppFontSizeNormal"] = fontSize;
+        Application.Current.Resources["AppFontSizeLarge"] = fontSize + 1d;
+        Application.Current.Resources["AppFontSizeSubtitle"] = fontSize + 4d;
+        Application.Current.Resources["AppFontSizeTitle"] = fontSize + 12d;
+
+        // SukiUI / Avalonia 自带控件用的字号资源。
+        Application.Current.Resources["FontSizeSmall"] = Math.Max(MIN_FONT_SIZE - 2d, fontSize - 1d);
+        Application.Current.Resources["FontSizeNormal"] = fontSize;
+        Application.Current.Resources["FontSizeLarge"] = fontSize + 1d;
+
+        // 窗口字号：控件的默认字号（没有显式设置 FontSize 的地方）都继承它。
         if (Application.Current.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { } window })
         {
-            window.FontSize = Profile.FontSize;
+            window.FontSize = fontSize;
+        }
+        else
+        {
+            _logger.LogInformation("主窗口尚未创建，字号将在窗口创建后由界面资源生效。");
         }
     }
 
     private void ApplyTheme()
     {
-        _sukiTheme.ChangeBaseTheme(Profile.BaseTheme switch
+        _sukiTheme.ChangeBaseTheme(Preferences.BaseTheme switch
         {
             "Light" => ThemeVariant.Light,
             "Dark" => ThemeVariant.Dark,
             _ => ThemeVariant.Default
         });
 
-        if (Enum.TryParse(Profile.ColorTheme, ignoreCase: true, out SukiColor color))
-        {
-            _sukiTheme.ChangeColorTheme(color);
-        }
+        ApplyColorTheme(Preferences.ColorTheme);
     }
 
-    private void OnBaseThemeChanged(ThemeVariant variant)
+    /// <summary>按名字切配色：先按显示名匹配已有的配色，再退回按 SukiColor 解析。</summary>
+    private void ApplyColorTheme(string colorTheme)
     {
-        Profile.BaseTheme = variant.ToString();
-        ScheduleSave();
-    }
+        SukiColorTheme? theme = _sukiTheme.ColorThemes
+            .FirstOrDefault(candidate => string.Equals(candidate.DisplayName, colorTheme, StringComparison.OrdinalIgnoreCase));
 
-    private void OnColorThemeChanged(SukiColorTheme theme)
-    {
-        // 注意：SukiUI 切换配色时不会回写 SukiTheme.ThemeColor（它只在初始化时赋值），
-        // 所以这里用内置配色字典反查对应的 SukiColor。（自定义配色不在字典里，保持原值。）
-        foreach ((SukiColor color, SukiColorTheme defaultTheme) in SukiTheme.DefaultColorThemes)
+        if (theme is not null)
         {
-            if (!ReferenceEquals(defaultTheme, theme))
-            {
-                continue;
-            }
-
-            if (!string.Equals(Profile.ColorTheme, color.ToString(), StringComparison.Ordinal))
-            {
-                Profile.ColorTheme = color.ToString();
-                ScheduleSave();
-            }
-
+            _sukiTheme.ChangeColorTheme(theme);
             return;
         }
+
+        if (Enum.TryParse(colorTheme, ignoreCase: true, out SukiColor color))
+        {
+            _sukiTheme.ChangeColorTheme(color);
+            return;
+        }
+
+        _logger.LogWarning("未知的配色主题「{ColorTheme}」，保持当前配色。", colorTheme);
     }
 
-    /// <summary>防抖写库：连续变化只在停止 600ms 后写一次。</summary>
-    private void ScheduleSave()
+    /// <summary>记录改动并立即写库（不阻塞界面）。</summary>
+    private void SavePreferencesImmediately(string reason)
     {
-        _debounceTokenSource?.Cancel();
-        _debounceTokenSource?.Dispose();
+        _preferencesDirty = true;
+        RaiseChanged();
+
+        _logger.LogInformation("偏好已更新（{Reason}），正在写库。", reason);
+
+        _ = Task.Run(SavePreferencesAsync);
+    }
+
+    /// <summary>字号防抖写库：连续变化只在停止 600ms 后写一次。</summary>
+    private void ScheduleFontSizeSave()
+    {
+        _fontSizeDebounce?.Cancel();
+        _fontSizeDebounce?.Dispose();
 
         CancellationTokenSource source = new();
-        _debounceTokenSource = source;
+        _fontSizeDebounce = source;
 
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(SAVE_DEBOUNCE, source.Token);
-                await SaveProfileAsync();
+                await SavePreferencesAsync();
             }
             catch (OperationCanceledException)
             {
@@ -298,16 +383,49 @@ public class AppSnapshot : IAppSnapshot
         });
     }
 
-    private async Task SaveProfileAsync()
+    private async Task SavePreferencesAsync()
     {
+        await _saveLock.WaitAsync();
+
         try
         {
-            await _userProfileService.SaveAsync(Profile);
-            _logger.LogInformation("偏好已写入 SQLite：字号 {FontSize}，主题 {BaseTheme}/{ColorTheme}。", Profile.FontSize, Profile.BaseTheme, Profile.ColorTheme);
+            await _preferencesService.SaveAsync(Preferences);
+            _preferencesDirty = false;
+
+            _logger.LogInformation(
+                "偏好已写入 SQLite：字号 {FontSize}，主题 {BaseTheme}/{ColorTheme}。",
+                Preferences.FontSize, Preferences.BaseTheme, Preferences.ColorTheme);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "写入用户偏好失败。");
+            _logger.LogError(ex, "写入偏好失败。");
+        }
+        finally
+        {
+            _saveLock.Release();
+        }
+    }
+
+    private async Task SaveUserAsync()
+    {
+        _userDirty = true;
+
+        await _saveLock.WaitAsync();
+
+        try
+        {
+            await _userService.SaveAsync(User);
+            _userDirty = false;
+
+            _logger.LogInformation("账号已写入 SQLite：昵称「{Nickname}」。", User.Nickname);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "写入账号失败。");
+        }
+        finally
+        {
+            _saveLock.Release();
         }
     }
 }

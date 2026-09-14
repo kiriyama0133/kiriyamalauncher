@@ -30,6 +30,9 @@ public partial class GameViewModel : ObservableObject
 
     public bool HasCoverImage => CoverImage is not null;
 
+    /// <summary>这个游戏的联机集成标识（没有联机支持时为 null）。</summary>
+    public string? IntegrationId => Game.IntegrationId;
+
     public GameViewModel(GameDto game, Action<GameViewModel> openRequested)
     {
         Game = game;

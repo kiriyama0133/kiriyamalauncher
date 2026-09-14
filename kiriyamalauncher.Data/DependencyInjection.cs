@@ -21,7 +21,21 @@ public static class DependencyInjection
             .AddDatabaseAccess()
             .AddWebAccess()
             .AddScoped<IGameDataAccess, GameDataAccess>()
+            // 存储层：账号表与偏好表各自独立（偏好不依赖账号）。
+            .AddSingleton<SqliteDatabase>()
             .AddSingleton<IUserRepository, UserRepository>()
+            .AddSingleton<IUserPreferencesRepository, UserPreferencesRepository>()
+            .AddSingleton<IGameLaunchPathRepository, GameLaunchPathRepository>()
+            // 游戏联机集成：加新游戏时只要再注册一个 IGameIntegration，其它层不用改。
+            .AddSingleton<GameResourceLocator>()
+            .AddSingleton<IGameToolRunner, GameToolRunner>()
+            .AddSingleton<IGameProcessMonitor, GameProcessMonitor>()
+            .AddSingleton<IGameIntegration, Civilization6GameIntegration>()
+            .AddSingleton<IGameIntegrationRegistry, GameIntegrationRegistry>()
+            // 虚拟局域网设备发现（轮询虚拟网段）
+            .AddSingleton<IVirtualLanDiscoveryService, VirtualLanDiscoveryService>()
+            // 游戏隧道：Hook ↔ libzt
+            .AddSingleton<IVirtualLanTunnel, VirtualLanTunnel>()
             .AddSingleton<IZeroTierService, ZeroTierService>()
             .AddSingleton<IFirewallService>(CreateFirewallService);
 

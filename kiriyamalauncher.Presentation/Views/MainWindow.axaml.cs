@@ -18,7 +18,7 @@ public partial class MainWindow : SukiWindow
         // SukiWindow 的标题栏由 SukiUI 自己绘制，所以各平台都显示应用名。
         this.Title = AppInfo.AppDisplayName;
 
-        // 用已恢复（或默认）的字号初始化窗口。
-        this.FontSize = Ioc.Default.GetRequiredService<IAppSnapshot>().Profile.FontSize;
+        // 用已恢复（或默认）的字号初始化窗口；偏好恢复完成后快照会再套用一次。
+        this.FontSize = Ioc.Default.GetRequiredService<IAppSnapshot>().Preferences.FontSize;
     }
 }

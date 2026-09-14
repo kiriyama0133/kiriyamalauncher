@@ -147,8 +147,8 @@ public partial class SignInDialogViewModel : BaseViewModel
             {
                 bool matched = await _snapshot.SignInAsync(loginName, Password);
                 _notifier.Success("登录成功", matched
-                    ? $"欢迎回来，{_snapshot.Profile.Nickname}。"
-                    : $"已以「{_snapshot.Profile.Nickname}」的身份登录。");
+                    ? $"欢迎回来，{_snapshot.User.Nickname}。"
+                    : $"已以「{_snapshot.User.Nickname}」的身份登录。");
             }
 
             _dialog.Dismiss();

@@ -1,0 +1,26 @@
+civ6hook-diag v2 摘要  2026-09-14 19:47:04  pid=6008
+
+【结论速览】
+  抓到广播/局域网发包：1 次（其中目标端口在 62900-62999 的：1 次）
+  收到过数据的收包次数：0 次
+
+【调用统计】
+  sendto/WSASendTo/send：1    WSASend：0
+  recvfrom/WSARecvFrom/recv/WSARecv：1（阻塞式 1，重叠式 0）
+  socket 创建：4    bind：1    connect：0
+  select=0  WSAPoll=0  WSAEventSelect=0  WSAEnumNetworkEvents=0  CreateIoCompletionPort=0
+  WSAWaitForMultipleEvents=0  WSAGetOverlappedResult=0
+
+【socket 明细】（哪些 socket 在收发、绑定端口、由哪个模块创建）
+  sock=2356   创建者=System.Net.Sockets.dll+0x3718C 绑定端口=58381  广播选项=打开
+        发送 1 次/4 字节  接收 1 次/0 字节（有效数据 0 次）错误 1 次（最后 errno=10060）
+        最后发送到：255.255.255.255:62999  payload=[4B 49 52 49 ]
+  sock=2368   创建者=System.Net.Sockets.dll+0x181F9 绑定端口=?      广播选项=未设置
+        发送 0 次/0 字节  接收 0 次/0 字节（有效数据 0 次）错误 0 次（最后 errno=0）
+        （这个 socket 已经关闭）
+  sock=2376   创建者=System.Net.Sockets.dll+0x181F9 绑定端口=?      广播选项=未设置
+        发送 0 次/0 字节  接收 0 次/0 字节（有效数据 0 次）错误 0 次（最后 errno=0）
+        （这个 socket 已经关闭）
+
+【发送目标统计】（目标 IP:端口 → 次数 / 总字节，附调用模块）
+  255.255.255.255:62999      System.Net.Sockets.dll+0x147E8 1        4

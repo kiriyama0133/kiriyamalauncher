@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="560"
+             x:Class="kiriyamalauncher.Presentation.Views.NetworkToolsDialogView"
+             x:DataType="vm:NetworkToolsDialogViewModel"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 Width="560">
+
+	<UserControl.Styles>
+		<Style Selector="Border.sectionCard">
+			<Setter Property="Background" Value="{DynamicResource SukiCardBackground}" />
+			<Setter Property="BorderBrush" Value="{DynamicResource SukiBorderBrush}" />
+			<Setter Property="BorderThickness" Value="1" />
+			<Setter Property="CornerRadius" Value="14" />
+			<Setter Property="Padding" Value="16" />
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Spacing="14">
+
+		<StackPanel Spacing="4">
+			<TextBlock Text="网络工具"
+					   FontSize="{DynamicResource AppFontSizeSubtitle}"
+					   FontWeight="DemiBold" />
+			<TextBlock Text="查看本机虚拟 IP，轮询发现同一个虚拟局域网里的设备，并对设备做 Ping 探测（都走内嵌 ZeroTier 节点，不需要虚拟网卡）。"
+					   FontSize="{DynamicResource AppFontSizeSmall}"
+					   TextWrapping="Wrap"
+					   Foreground="{DynamicResource SukiLowText}" />
+		</StackPanel>
+
+		<!-- 本机 -->
+		<StackPanel Orientation="Horizontal" Spacing="8">
+			<TextBlock Text="本机虚拟 IP："
+					   FontSize="{DynamicResource AppFontSizeSmall}"
+					   VerticalAlignment="Center"
+					   Foreground="{DynamicResource SukiLowText}" />
+			<TextBlock Text="{Binding LocalVirtualIp}"
+					   FontSize="{DynamicResource AppFontSizeCompact}"
+					   FontWeight="DemiBold"
+					   VerticalAlignment="Center"
+					   Foreground="{DynamicResource SukiPrimaryColor}" />
+			<Button Classes="Basic"
+					Content="刷新"
+					Cursor="Hand"
+					Command="{Binding RefreshLocalInfoCommand}" />
+		</StackPanel>
+
+		<!-- 设备发现 -->
+		<Border Classes="sectionCard">
+			<StackPanel Spacing="10">
+				<TextBlock Text="设备发现"
+						   FontSize="{DynamicResource AppFontSizeLarge}"
+						   FontWeight="DemiBold" />
+
+				<Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+					<TextBox Grid.Column="0"
+							 Text="{Binding ScanPrefix}"
+							 PlaceholderText="网段前缀，例如 10.74.203." />
+					<Button Grid.Column="1"
+							Classes="Flat"
+							Content="扫描一次"
+							Cursor="Hand"
+							IsEnabled="{Binding CanScan}"
+							Command="{Binding ScanOnceCommand}" />
+					<Button Grid.Column="2"
+							Classes="Basic"
+							Content="{Binding ScanButtonText}"
+							Cursor="Hand"
+							Command="{Binding ToggleScanningCommand}" />
+					<Button Grid.Column="3"
+							Classes="Basic"
+							Content="清空"
+							Cursor="Hand"
+							Command="{Binding ClearPeersCommand}" />
+				</Grid>
+
+				<TextBlock Text="{Binding ScanStatusText}"
+						   FontSize="{DynamicResource AppFontSizeSmall}"
+						   TextWrapping="Wrap"
+						   Foreground="{DynamicResource SukiLowText}" />
+
+				<ListBox ItemsSource="{Binding Peers}"
+						 SelectedItem="{Binding SelectedPeer}"
+						 MaxHeight="180"
+						 IsVisible="{Binding HasPeers}">
+					<ListBox.ItemTemplate>
+						<DataTemplate x:DataType="vm:VirtualLanPeerRow">
+							<Grid ColumnDefinitions="*,90,90">
+								<TextBlock Grid.Column="0" Text="{Binding VirtualIp}" />
+								<TextBlock Grid.Column="1"
+										   Text="{Binding LatencyMilliseconds, StringFormat='{}{0} ms'}"
+										   Foreground="{DynamicResource SukiLowText}" />
+								<TextBlock Grid.Column="2"
+										   Text="{Binding LastSeenText}"
+										   Foreground="{DynamicResource SukiLowText}" />
+							</Grid>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
+
+				<Button Classes="Basic"
+						Content="用选中的设备作为 Ping 目标"
+						Cursor="Hand"
+						Command="{Binding UseSelectedPeerCommand}" />
+			</StackPanel>
+		</Border>
+
+		<!-- Ping -->
+		<Border Classes="sectionCard">
+			<StackPanel Spacing="10">
+				<TextBlock Text="Ping 探测"
+						   FontSize="{DynamicResource AppFontSizeLarge}"
+						   FontWeight="DemiBold" />
+
+				<Grid ColumnDefinitions="*,110,Auto,Auto" ColumnSpacing="8">
+					<TextBox Grid.Column="0"
+							 Text="{Binding PingTargetIp}"
+							 PlaceholderText="对方虚拟 IP，例如 10.74.203.61" />
+					<TextBox Grid.Column="1"
+							 Text="{Binding PingPortText}"
+							 PlaceholderText="端口" />
+					<Button Grid.Column="2"
+							Classes="Flat"
+							Content="Ping"
+							Cursor="Hand"
+							IsEnabled="{Binding CanPing}"
+							Command="{Binding PingCommand}" />
+					<Button Grid.Column="3"
+							Classes="Basic"
+							Content="清空"
+							Cursor="Hand"
+							Command="{Binding ClearPingLogCommand}" />
+				</Grid>
+
+				<StackPanel Orientation="Horizontal" Spacing="8">
+					<ProgressBar Width="90"
+								 Height="4"
+								 IsIndeterminate="True"
+								 VerticalAlignment="Center"
+								 IsVisible="{Binding IsPinging}" />
+					<TextBlock Text="{Binding PingSummaryText}"
+							   FontSize="{DynamicResource AppFontSizeSmall}"
+							   TextWrapping="Wrap"
+							   VerticalAlignment="Center" />
+				</StackPanel>
+
+				<ScrollViewer MaxHeight="120"
+							  HorizontalScrollBarVisibility="Disabled"
+							  IsVisible="{Binding HasPingLog}">
+					<TextBlock Text="{Binding PingLogText}"
+							   FontSize="{DynamicResource AppFontSizeSmall}"
+							   TextWrapping="Wrap"
+							   Foreground="{DynamicResource SukiLowText}" />
+				</ScrollViewer>
+			</StackPanel>
+		</Border>
+
+		<Button Classes="Flat"
+				Content="关闭"
+				HorizontalAlignment="Right"
+				Cursor="Hand"
+				Command="{Binding CloseCommand}" />
+
+	</StackPanel>
+</UserControl>

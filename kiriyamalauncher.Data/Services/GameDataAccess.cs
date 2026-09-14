@@ -19,7 +19,8 @@ public class GameDataAccess : IGameDataAccess
         {
             Name = "文明 6",
             Description = "回合制策略，一局到天亮",
-            CoverImage = "sid.jpeg"
+            CoverImage = "sid.jpeg",
+            IntegrationId = Civilization6GameIntegration.INTEGRATION_ID
         }
     ];
 

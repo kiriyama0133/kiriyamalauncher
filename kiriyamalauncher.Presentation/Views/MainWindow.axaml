@@ -14,7 +14,7 @@
         WindowStartupLocation="CenterScreen"
         Topmost="{Binding IsPinned}"
 		x:Name="Win"
-        Icon="/Base/Assets/transparent.ico">
+        Icon="/img.ico">
 
 	<sukiUi:SukiWindow.Hosts>
 		<!-- 右下角的 toast 宿主：通知统一从这里弹出。 -->
@@ -101,7 +101,7 @@
 					Command="{Binding ActivePage.GoBackCommand}"
 					ToolTip.Tip="返回上一层">
 				<StackPanel Orientation="Horizontal" Spacing="0">
-					<TextBlock Classes="backLabel" Text="返回" FontSize="13" VerticalAlignment="Center" />
+							<TextBlock Classes="backLabel" Text="返回" FontSize="{DynamicResource AppFontSizeCompact}" VerticalAlignment="Center" />
 					<i:MaterialIcon Kind="ArrowLeft"
 								   Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
 								   Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
@@ -124,7 +124,7 @@
 				ToolTip.Tip="登录账号"
 				IsVisible="{Binding !IsSignedIn}">
 			<StackPanel Orientation="Horizontal" Spacing="6">
-				<TextBlock Text="登录" FontSize="12" VerticalAlignment="Center" />
+						<TextBlock Text="登录" FontSize="{DynamicResource AppFontSizeSmall}" VerticalAlignment="Center" />
 			</StackPanel>
 		</Button>
 
@@ -132,7 +132,7 @@
 				ToolTip.Tip="当前账号"
 				IsVisible="{Binding IsSignedIn}">
 			<StackPanel Orientation="Horizontal" Spacing="6">
-				<TextBlock Text="{Binding AccountText}" FontSize="12" VerticalAlignment="Center" />
+						<TextBlock Text="{Binding AccountText}" FontSize="{DynamicResource AppFontSizeSmall}" VerticalAlignment="Center" />
 			</StackPanel>
 			<Button.Flyout>
 				<!-- 参照 demo 顶部菜单栏的写法：SukiUI 的 MenuFlyout + 带图标的 MenuItem。 -->
@@ -163,6 +163,15 @@
 							Foreground="{DynamicResource SukiText}" />
 		</Button>
 
+		<Button Classes="Basic Rounded WindowControlsButton"
+				Command="{Binding OpenNetworkToolsCommand}"
+				ToolTip.Tip="网络工具：虚拟局域网设备发现与 Ping">
+			<i:MaterialIcon Kind="LanConnect"
+							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+							Foreground="{DynamicResource SukiText}" />
+		</Button>
+
 		<Button Classes="Basic Rounded WindowControlsButton" ToolTip.Tip="外观：明暗模式与配色主题">
 			<i:MaterialIcon Kind="PaletteOutline"
 							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
@@ -178,10 +187,10 @@
 							BoxShadow="{DynamicResource SukiPopupShadow}">
 						<StackPanel Spacing="16">
 
-							<TextBlock Text="外观" FontSize="16" FontWeight="DemiBold" />
+							<TextBlock Text="外观" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="DemiBold" />
 
 							<StackPanel Spacing="8">
-								<TextBlock Text="明暗模式" FontSize="12" Foreground="{DynamicResource SukiLowText}" />
+								<TextBlock Text="明暗模式" FontSize="{DynamicResource AppFontSizeSmall}" Foreground="{DynamicResource SukiLowText}" />
 								<StackPanel Orientation="Horizontal" Spacing="16">
 									<RadioButton GroupName="Appearance" Content="跟随系统"
 												 IsChecked="{Binding Appearance.IsSystemTheme, Mode=TwoWay}" />
@@ -193,7 +202,7 @@
 							</StackPanel>
 
 							<StackPanel Spacing="8">
-								<TextBlock Text="配色主题" FontSize="12" Foreground="{DynamicResource SukiLowText}" />
+								<TextBlock Text="配色主题" FontSize="{DynamicResource AppFontSizeSmall}" Foreground="{DynamicResource SukiLowText}" />
 								<ItemsControl ItemsSource="{Binding Appearance.ColorThemes}">
 									<ItemsControl.ItemsPanel>
 										<ItemsPanelTemplate>

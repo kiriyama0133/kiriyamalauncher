@@ -65,7 +65,7 @@ public partial class SettingsViewModel : PageViewModel
     /// <summary>当前连接模式的说明文字。</summary>
     public string ConnectionModeHint => IsSelfHostedController
         ? "自建控制器：网络由你自己的 zerotier-one controller 提供（moon 只负责根节点与中继），网络 ID 填自建控制器生成的 16 位 ID。"
-        : "my.zerotier.com：在官网创建网络后，把 16 位网络 ID 填在下面；若是私有网络，记得在官网把新成员（节点 ID）勾选 Auth。";
+        : "my.zerotier.com：在官网创建网络后，把 16 位网络 ID 填在下面；走官方根节点，不需要 moon。若是私有网络，记得在官网把新成员（节点 ID）勾选 Auth。";
 
     /// <summary>上一次保存的 Moon 服务器地址（用于「取消」还原）。</summary>
     private string _savedMoonServerIp = string.Empty;
@@ -76,10 +76,10 @@ public partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(IAppSnapshot snapshot)
     {
         _snapshot = snapshot;
-        _fontSize = snapshot.Profile.FontSize;
-        _moonServerIp = snapshot.Profile.MoonServerIp;
+        _fontSize = snapshot.Preferences.FontSize;
+        _moonServerIp = snapshot.Preferences.MoonServerIp;
         _savedMoonServerIp = _moonServerIp;
-        _zeroTierNetworkId = snapshot.Profile.ZeroTierNetworkId;
+        _zeroTierNetworkId = snapshot.Preferences.ZeroTierNetworkId;
         _savedNetworkId = _zeroTierNetworkId;
         SyncConnectionMode();
 
@@ -88,19 +88,19 @@ public partial class SettingsViewModel : PageViewModel
 
     private void OnSnapshotChanged(object? sender, EventArgs e)
     {
-        FontSize = _snapshot.Profile.FontSize;
+        FontSize = _snapshot.Preferences.FontSize;
         SyncConnectionMode();
 
         // 正在编辑时不要覆盖用户输入。
         if (!IsEditingMoonServer)
         {
-            MoonServerIp = _snapshot.Profile.MoonServerIp;
+            MoonServerIp = _snapshot.Preferences.MoonServerIp;
             _savedMoonServerIp = MoonServerIp;
         }
 
         if (!IsEditingNetworkId)
         {
-            ZeroTierNetworkId = _snapshot.Profile.ZeroTierNetworkId;
+            ZeroTierNetworkId = _snapshot.Preferences.ZeroTierNetworkId;
             _savedNetworkId = ZeroTierNetworkId;
         }
     }
@@ -135,7 +135,7 @@ public partial class SettingsViewModel : PageViewModel
     {
         _snapshot.UpdateMoonServerIp(MoonServerIp);
 
-        _savedMoonServerIp = _snapshot.Profile.MoonServerIp;
+        _savedMoonServerIp = _snapshot.Preferences.MoonServerIp;
         MoonServerIp = _savedMoonServerIp;
         IsEditingMoonServer = false;
     }
@@ -163,7 +163,7 @@ public partial class SettingsViewModel : PageViewModel
         NetworkIdError = string.Empty;
         _snapshot.UpdateZeroTierNetworkId(value);
 
-        _savedNetworkId = _snapshot.Profile.ZeroTierNetworkId;
+        _savedNetworkId = _snapshot.Preferences.ZeroTierNetworkId;
         ZeroTierNetworkId = _savedNetworkId;
         IsEditingNetworkId = false;
     }
@@ -188,7 +188,7 @@ public partial class SettingsViewModel : PageViewModel
     private void SyncConnectionMode()
     {
         bool isSelfHosted = string.Equals(
-            _snapshot.Profile.ZeroTierConnectionMode,
+            _snapshot.Preferences.ZeroTierConnectionMode,
             ZeroTierSettings.SelfHostedController,
             StringComparison.OrdinalIgnoreCase);
 

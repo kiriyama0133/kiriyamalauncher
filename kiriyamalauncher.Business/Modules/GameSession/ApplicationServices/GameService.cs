@@ -29,7 +29,8 @@ public class GameService : IGameService
             {
                 Name = game.Name,
                 Description = game.Description,
-                CoverImage = game.CoverImage
+                CoverImage = game.CoverImage,
+                IntegrationId = game.IntegrationId
             })
             .ToList();
     }

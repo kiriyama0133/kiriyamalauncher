@@ -34,8 +34,8 @@
 			<StackPanel Margin="20,0,20,24" Spacing="8">
 				<i:MaterialIcon Kind="LanConnect" Width="48" Height="48" HorizontalAlignment="Left"
 								Foreground="{DynamicResource SukiPrimaryColor}" />
-				<TextBlock Text="{Binding AppDisplayName}" FontSize="16" FontWeight="DemiBold" />
-				<TextBlock Text="{Binding VersionText}" FontSize="12" Opacity="0.6" />
+				<TextBlock Text="{Binding AppDisplayName}" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="DemiBold" />
+				<TextBlock Text="{Binding VersionText}" FontSize="{DynamicResource AppFontSizeSmall}" Opacity="0.6" />
 			</StackPanel>
 		</sukiUi:SukiSideMenu.HeaderContent>
 

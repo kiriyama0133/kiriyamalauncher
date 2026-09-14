@@ -23,7 +23,7 @@
 	<Border>
 		<ScrollViewer>
 			<StackPanel Margin="24">
-				<TextBlock Text="{Binding AppDisplayName}" FontSize="30" FontWeight="DemiBold" />
+				<TextBlock Text="{Binding AppDisplayName}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="DemiBold" />
 				<TextBlock Text="{Binding AppDescription}" Classes="sectionContent" Margin="0,6,0,0" Opacity="0.75" />
 
 				<TextBlock Text="这是什么" Classes="header" />

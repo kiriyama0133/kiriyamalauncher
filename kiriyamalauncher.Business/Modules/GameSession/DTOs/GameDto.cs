@@ -16,4 +16,7 @@ public class GameDto
     /// 若本身已是完整地址（avares://、http(s):// 或绝对路径）表现层会直接使用。
     /// </summary>
     public string? CoverImage { get; init; }
+
+    /// <summary>对应的联机集成标识（例如 civ6）；没有联机支持的游戏留空。</summary>
+    public string? IntegrationId { get; init; }
 }
