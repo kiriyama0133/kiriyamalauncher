@@ -19,16 +19,12 @@
 
 			<TextBlock Text="{Binding IdentifierLabel}" FontWeight="DemiBold" Margin="6,0,0,3"
 					   Foreground="{DynamicResource SukiLowText}" />
-			<TextBox Text="{Binding LoginName}" Watermark="例如 kiriyama" />
+			<TextBox Text="{Binding LoginName}" Watermark="{Binding IdentifierWatermark}" />
 			<TextBlock Text="{Binding LoginNameError}" Margin="6,3,0,0" FontSize="{DynamicResource AppFontSizeSmall}"
 					   Foreground="{DynamicResource ErrorBrush}"
 					   IsVisible="{Binding LoginNameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
 			<StackPanel Spacing="4" IsVisible="{Binding IsRegisterMode}">
-				<TextBlock Text="昵称" FontWeight="DemiBold" Margin="6,12,0,3"
-						   Foreground="{DynamicResource SukiLowText}" />
-				<TextBox Text="{Binding Nickname}" Watermark="显示在标题栏上的名字" />
-
 				<TextBlock Text="邮箱" FontWeight="DemiBold" Margin="6,12,0,3"
 						   Foreground="{DynamicResource SukiLowText}" />
 				<TextBox Text="{Binding Email}" Watermark="name@example.com" />
@@ -39,7 +35,7 @@
 
 			<TextBlock Text="密码" FontWeight="DemiBold" Margin="6,12,0,3"
 					   Foreground="{DynamicResource SukiLowText}" />
-			<TextBox Text="{Binding Password}" Watermark="测试阶段不会保存" PasswordChar="*" />
+			<TextBox Text="{Binding Password}" Watermark="至少 8 位" PasswordChar="*" />
 			<TextBlock Text="{Binding PasswordError}" Margin="6,3,0,0" FontSize="{DynamicResource AppFontSizeSmall}"
 					   Foreground="{DynamicResource ErrorBrush}"
 					   IsVisible="{Binding PasswordError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="kiriyamalauncher.Presentation.Views.LogsView"
+             xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+             xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+             x:DataType="vm:LogsViewModel">
+
+	<UserControl.Styles>
+		<!-- 日志条目：等宽字体，整体可读、级别用颜色区分。 -->
+		<Style Selector="TextBlock.logTime">
+			<Setter Property="FontSize" Value="12" />
+			<Setter Property="Opacity" Value="0.55" />
+			<Setter Property="FontFamily" Value="Consolas, Cascadia Mono, monospace" />
+		</Style>
+
+		<Style Selector="TextBlock.logLevel">
+			<Setter Property="FontSize" Value="12" />
+			<Setter Property="FontWeight" Value="DemiBold" />
+			<Setter Property="FontFamily" Value="Consolas, Cascadia Mono, monospace" />
+		</Style>
+
+		<Style Selector="TextBlock.logMessage">
+			<Setter Property="FontSize" Value="12" />
+			<Setter Property="FontFamily" Value="Consolas, Cascadia Mono, monospace" />
+			<Setter Property="TextWrapping" Value="Wrap" />
+		</Style>
+
+		<Style Selector="TextBlock.logException">
+			<Setter Property="FontSize" Value="12" />
+			<Setter Property="FontFamily" Value="Consolas, Cascadia Mono, monospace" />
+			<Setter Property="TextWrapping" Value="Wrap" />
+			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+			<Setter Property="Opacity" Value="0.7" />
+		</Style>
+
+		<!-- 级别着色：Debug 灰、Info 正常、Warning 橙、Error 红。 -->
+		<Style Selector="TextBlock.levelDebug">
+			<Setter Property="Foreground" Value="Gray" />
+		</Style>
+		<Style Selector="TextBlock.levelInfo">
+			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+		</Style>
+		<Style Selector="TextBlock.levelWarning">
+			<Setter Property="Foreground" Value="#E6A23C" />
+		</Style>
+		<Style Selector="TextBlock.levelError">
+			<Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+		</Style>
+	</UserControl.Styles>
+
+	<Border Padding="24">
+		<Grid RowDefinitions="Auto,*">
+			<!-- 页头：日志 + 清空按钮。 -->
+			<suki:GlassCard Grid.Row="0" Classes="HeaderCard" Margin="0,0,0,14">
+				<Grid ColumnDefinitions="*,Auto">
+					<suki:GroupBox Header="运行日志">
+						<StackPanel Spacing="4">
+							<TextBlock Classes="cardHint" Text="实时显示应用运行日志（最新在最上），日志同时写入本地文件。" />
+						</StackPanel>
+					</suki:GroupBox>
+
+					<Button Grid.Column="1" Classes="Basic Rounded" VerticalAlignment="Center" Padding="14,6"
+							Command="{Binding ClearCommand}"
+							IsEnabled="{Binding HasLogs}"
+							ToolTip.Tip="清空内存日志">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<TextBlock Text="清空" FontSize="{DynamicResource AppFontSizeSmall}" VerticalAlignment="Center" />
+						</StackPanel>
+					</Button>
+				</Grid>
+			</suki:GlassCard>
+
+			<!-- 日志列表。 -->
+			<suki:GlassCard Grid.Row="1" Classes="settingCard">
+				<ScrollViewer x:Name="LogScroller" HorizontalScrollBarVisibility="Disabled">
+					<ItemsControl ItemsSource="{Binding Logs}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate DataType="{x:Type vm:LogEntryViewModel}">
+								<StackPanel Spacing="2" Margin="0,0,0,8">
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<TextBlock Classes="logTime" Text="{Binding TimeText}" VerticalAlignment="Center" />
+										<TextBlock Classes="logLevel {Binding LevelClass}" Text="{Binding LevelText}" VerticalAlignment="Center" />
+									</StackPanel>
+									<TextBlock Classes="logMessage" Text="{Binding Message}" />
+									<TextBlock Classes="logException" Text="{Binding ExceptionText}"
+											   IsVisible="{Binding HasException}" />
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</ScrollViewer>
+			</suki:GlassCard>
+		</Grid>
+	</Border>
+</UserControl>

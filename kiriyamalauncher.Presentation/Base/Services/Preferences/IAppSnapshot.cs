@@ -37,8 +37,20 @@ public interface IAppSnapshot
     /// <summary>更新 ZeroTier 网络 ID（立即写库）。</summary>
     void UpdateZeroTierNetworkId(string networkId);
 
-    /// <summary>更新 ZeroTier 连接模式（Official / SelfHosted，立即写库）。</summary>
+    /// <summary>更新自建控制器生成的网络 ID（立即写库）。</summary>
+    void UpdateSelfHostedNetworkId(string networkId);
+
+    /// <summary>更新 ZeroTier 连接模式（Official / SelfHosted / Relay，立即写库）。</summary>
     void UpdateZeroTierConnectionMode(string connectionMode);
+
+    /// <summary>更新中继服务器（服务端联机）的 IP 或主机名（立即写库）。</summary>
+    void UpdateRelayServerIp(string relayServerIp);
+
+    /// <summary>更新中继服务器（服务端联机）的端口（立即写库）。</summary>
+    void UpdateRelayServerPort(int relayServerPort);
+
+    /// <summary>更新 ZeroTier 传输引擎（Sockets / Client，立即写库）。</summary>
+    void UpdateZeroTierTransportBackend(string transportBackend);
 
     /// <summary>记录明暗模式（调用方已经切换过 SukiUI 主题，这里只写库）。</summary>
     void UpdateBaseTheme(string baseTheme);
@@ -46,11 +58,16 @@ public interface IAppSnapshot
     /// <summary>记录配色主题（调用方已经切换过 SukiUI 配色，这里只写库）。</summary>
     void UpdateColorTheme(string colorTheme);
 
-    /// <summary>登录（测试阶段：不校验密码，密码不落库）。返回是否匹配到已注册的账号。</summary>
-    Task<bool> SignInAsync(string loginNameOrEmail, string password);
+    /// <summary>
+    /// 登录（PKCE + OAuth）：调中继服务器校验密码并换取访问令牌。
+    /// 成功会把账号信息与令牌写入本地；失败抛 <see cref="kiriyamalauncher.Data.RelayServerException"/>。
+    /// </summary>
+    Task SignInAsync(string email, string password);
 
-    /// <summary>注册（测试阶段：只把账号信息写进数据库，密码不落库）。</summary>
-    Task RegisterAsync(string loginName, string nickname, string email, string password);
+    /// <summary>
+    /// 注册：调中继服务器创建账户。邮箱已被占用会抛 <see cref="kiriyamalauncher.Data.RelayServerException"/>。
+    /// </summary>
+    Task RegisterAsync(string email, string password, string displayName);
 
     /// <summary>退出登录（清空账号与昵称，偏好不受影响）。</summary>
     Task SignOutAsync();

@@ -5,6 +5,7 @@
         xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
         xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
         xmlns:i="using:Material.Icons.Avalonia"
+        xmlns:animations="clr-namespace:SukiUI.Animations;assembly=SukiUI"
         x:Class="kiriyamalauncher.Presentation.Views.MainWindow"
         x:DataType="vm:MainViewModel"
 		mc:Ignorable="d" d:DesignWidth="1366" d:DesignHeight="768"
@@ -93,11 +94,13 @@
 							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
 							VerticalAlignment="Center"
 							Foreground="{DynamicResource SukiPrimaryColor}"
-							IsVisible="{Binding !ActivePage.CanGoBack}" />
+							animations:VisibilityBehavior.IsVisible="{Binding !ActivePage.CanGoBack}"
+							animations:VisibilityBehavior.HiddenScale="0.8" />
 
-			<!-- 返回按钮：默认只有图标，悬停时展开「返回」文字并显示边线。 -->
+			<!-- 返回按钮：默认只有图标，悬停时展开「返回」文字并显示边线；显隐带缩放+淡入淡出动画。 -->
 			<Button Classes="Basic NoPressedAnimation backButton"
-					IsVisible="{Binding ActivePage.CanGoBack}"
+					animations:VisibilityBehavior.IsVisible="{Binding ActivePage.CanGoBack}"
+					animations:VisibilityBehavior.HiddenScale="0.8"
 					Command="{Binding ActivePage.GoBackCommand}"
 					ToolTip.Tip="返回上一层">
 				<StackPanel Orientation="Horizontal" Spacing="0">

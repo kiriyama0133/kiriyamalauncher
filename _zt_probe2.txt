@@ -1,0 +1,19 @@
+=== all zerotier services ===
+none
+=== service by path ===
+none
+=== ProgramData dir ===
+controller.d | 1 | 08/30/2026 20:36:36
+moons.d | 1 | 09/14/2026 04:25:44
+networks.d | 1 | 09/14/2026 23:56:45
+authtoken.secret | 24 | 08/30/2026 20:36:36
+identity.secret | 270 | 08/30/2026 20:36:36
+local.conf | 103 | 09/14/2026 23:56:33
+metrics.prom | 0 | 09/14/2026 23:56:34
+metricstoken.secret | 24 | 08/30/2026 20:36:36
+planet | 257 | 09/14/2026 23:56:33
+zerotier-one.port | 5 | 09/14/2026 23:56:34
+zerotier-one_x64.exe | 6533488 | 05/20/2026 12:58:12
+zttap300.cat | 10769 | 05/20/2026 12:51:36
+zttap300.inf | 5312 | 05/20/2026 12:51:36
+zttap300.sys | 31744 | 05/20/2026 12:51:36

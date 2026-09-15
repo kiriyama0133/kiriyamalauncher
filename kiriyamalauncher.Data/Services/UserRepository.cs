@@ -24,16 +24,22 @@ public class UserRepository : IUserRepository
             LoginName     TEXT    NOT NULL DEFAULT '',
             Email         TEXT    NOT NULL DEFAULT '',
             ProfileUpdatedAt TEXT NULL,
+            AccessToken   TEXT    NOT NULL DEFAULT '',
+            RefreshToken  TEXT    NOT NULL DEFAULT '',
+            AccessTokenExpiresAt TEXT NULL,
             CreatedAt     TEXT    NULL);
         """;
 
     /// <summary>老库需要补的账号列。</summary>
     private static readonly IReadOnlyDictionary<string, string> OPTIONAL_COLUMNS = new Dictionary<string, string>
     {
-        ["Email"] = "Email TEXT NOT NULL DEFAULT ''"
+        ["Email"] = "Email TEXT NOT NULL DEFAULT ''",
+        ["AccessToken"] = "AccessToken TEXT NOT NULL DEFAULT ''",
+        ["RefreshToken"] = "RefreshToken TEXT NOT NULL DEFAULT ''",
+        ["AccessTokenExpiresAt"] = "AccessTokenExpiresAt TEXT NULL"
     };
 
-    private const string SELECT_COLUMNS = "Id, Nickname, LoginName, Email, ProfileUpdatedAt, CreatedAt";
+    private const string SELECT_COLUMNS = "Id, Nickname, LoginName, Email, ProfileUpdatedAt, AccessToken, RefreshToken, AccessTokenExpiresAt, CreatedAt";
 
     private readonly SqliteDatabase _database;
     private readonly ILogger<UserRepository> _logger;
@@ -115,7 +121,10 @@ public class UserRepository : IUserRepository
                 SET Nickname = $nickname,
                     LoginName = $loginName,
                     Email = $email,
-                    ProfileUpdatedAt = $profileUpdatedAt
+                    ProfileUpdatedAt = $profileUpdatedAt,
+                    AccessToken = $accessToken,
+                    RefreshToken = $refreshToken,
+                    AccessTokenExpiresAt = $accessTokenExpiresAt
                 WHERE Id = $id;
                 """;
             BindUser(updateCommand, user);
@@ -134,8 +143,8 @@ public class UserRepository : IUserRepository
     {
         await using SqliteCommand insertCommand = connection.CreateCommand();
         insertCommand.CommandText = """
-            INSERT INTO Users (Nickname, LoginName, Email, ProfileUpdatedAt, CreatedAt)
-            VALUES ($nickname, $loginName, $email, $profileUpdatedAt, $createdAt);
+            INSERT INTO Users (Nickname, LoginName, Email, ProfileUpdatedAt, AccessToken, RefreshToken, AccessTokenExpiresAt, CreatedAt)
+            VALUES ($nickname, $loginName, $email, $profileUpdatedAt, $accessToken, $refreshToken, $accessTokenExpiresAt, $createdAt);
             SELECT last_insert_rowid();
             """;
         BindUser(insertCommand, user);
@@ -151,6 +160,9 @@ public class UserRepository : IUserRepository
         command.Parameters.AddWithValue("$loginName", user.LoginName);
         command.Parameters.AddWithValue("$email", user.Email);
         command.Parameters.AddWithValue("$profileUpdatedAt", ToDbValue(user.ProfileUpdatedAt));
+        command.Parameters.AddWithValue("$accessToken", user.AccessToken);
+        command.Parameters.AddWithValue("$refreshToken", user.RefreshToken);
+        command.Parameters.AddWithValue("$accessTokenExpiresAt", ToDbValue(user.AccessTokenExpiresAt));
     }
 
     private static object ToDbValue(DateTime? value) => value is null ? DBNull.Value : value.Value.ToString("O");
@@ -162,7 +174,10 @@ public class UserRepository : IUserRepository
         LoginName = reader.GetString(2),
         Email = reader.GetString(3),
         ProfileUpdatedAt = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4)),
-        CreatedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5))
+        AccessToken = reader.GetString(5),
+        RefreshToken = reader.GetString(6),
+        AccessTokenExpiresAt = reader.IsDBNull(7) ? null : DateTime.Parse(reader.GetString(7)),
+        CreatedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8))
     };
 
     /// <summary>建表；老库缺列时补上。</summary>

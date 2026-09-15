@@ -3,3 +3,6 @@ https://www.iconarchive.com/show/button-ui-system-folders-drives-icons-by-blackv
 
 Page heading font "Akashi" by Ten by Twenty:
 https://www.fontspace.com/akashi-font-f14894
+
+首页狗头图标（suki-dog.png）来自开源 UI 库 SukiUI 的 Demo 资源（Images/OIG.N5o-removebg-preview.png），
+SukiUI 以 MIT 许可证开源：https://github.com/kikipoulet/SukiUI

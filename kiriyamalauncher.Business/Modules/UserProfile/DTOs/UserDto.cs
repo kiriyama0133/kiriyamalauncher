@@ -24,4 +24,16 @@ public class UserDto
 
     /// <summary>账号信息更新时间。</summary>
     public DateTime? ProfileUpdatedAt { get; set; }
+
+    /// <summary>访问令牌（JWT，登录后由中继服务器签发，不落库明文密码）。</summary>
+    public string AccessToken { get; set; } = string.Empty;
+
+    /// <summary>刷新令牌（用于换取新的访问令牌）。</summary>
+    public string RefreshToken { get; set; } = string.Empty;
+
+    /// <summary>访问令牌过期时间（UTC）。</summary>
+    public DateTime? AccessTokenExpiresAt { get; set; }
+
+    /// <summary>是否已登录（有访问令牌）。</summary>
+    public bool IsSignedIn => !string.IsNullOrWhiteSpace(AccessToken);
 }

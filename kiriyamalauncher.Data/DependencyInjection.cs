@@ -34,9 +34,14 @@ public static class DependencyInjection
             .AddSingleton<IGameIntegrationRegistry, GameIntegrationRegistry>()
             // 虚拟局域网设备发现（轮询虚拟网段）
             .AddSingleton<IVirtualLanDiscoveryService, VirtualLanDiscoveryService>()
+            // 中继服务器（服务端联机）客户端：房间大厅
+            .AddSingleton<IRelayServerClient, HttpRelayServerClient>()
             // 游戏隧道：Hook ↔ libzt
             .AddSingleton<IVirtualLanTunnel, VirtualLanTunnel>()
-            .AddSingleton<IZeroTierService, ZeroTierService>()
+            // ZeroTier 传输后端：Sockets（libzt 内嵌节点）+ Client（官方客户端，走系统虚拟网卡）。
+            // 工厂按用户偏好的传输引擎挑一个。
+            .AddSingleton<IZeroTierBackend, ZeroTierService>()
+            .AddSingleton<IZeroTierBackend, ZeroTierClientBackend>()
             .AddSingleton<IFirewallService>(CreateFirewallService);
 
         return services;

@@ -5,17 +5,14 @@
              mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="320"
              x:Class="kiriyamalauncher.Presentation.Base.Controls.LanDevicesControl"
              x:DataType="vm:LanDevicesViewModel"
-			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels">
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI">
 
 	<UserControl.Styles>
-		<Style Selector="Border.devicesCard">
-			<Setter Property="Background" Value="{DynamicResource SukiCardBackground}" />
-			<Setter Property="BorderBrush" Value="{DynamicResource SukiBorderBrush}" />
-			<Setter Property="BorderThickness" Value="1" />
+		<Style Selector="suki|GlassCard.devicesCard">
 			<Setter Property="CornerRadius" Value="14" />
 			<Setter Property="Padding" Value="18" />
-			<Setter Property="MaxWidth" Value="560" />
-			<Setter Property="HorizontalAlignment" Value="Left" />
+			<Setter Property="HorizontalAlignment" Value="Stretch" />
 		</Style>
 	</UserControl.Styles>
 
@@ -23,85 +20,82 @@
 		局域网设备卡片：轮询虚拟局域网，列出发现的设备。
 		DataContext 是 LanDevicesViewModel。
 	-->
-	<Border Classes="devicesCard">
-		<StackPanel Spacing="12">
+	<suki:GlassCard Classes="devicesCard">
+		<suki:GroupBox Header="局域网设备">
+			<StackPanel Spacing="12">
 
-			<StackPanel Spacing="4">
-				<TextBlock Text="局域网设备"
-						   FontSize="{DynamicResource AppFontSizeLarge}"
-						   FontWeight="DemiBold" />
 				<TextBlock Text="自动轮询同一个虚拟局域网，把在线的设备列出来；对方也要运行本程序并接入同一网络。更多工具（Ping 等）在标题栏的「网络工具」里。"
 						   FontSize="{DynamicResource AppFontSizeSmall}"
 						   TextWrapping="Wrap"
 						   Foreground="{DynamicResource SukiLowText}" />
-			</StackPanel>
 
-			<StackPanel Orientation="Horizontal" Spacing="6">
-				<TextBlock Text="本机虚拟 IP："
+				<StackPanel Orientation="Horizontal" Spacing="6">
+					<TextBlock Text="本机虚拟 IP："
+							   FontSize="{DynamicResource AppFontSizeSmall}"
+							   VerticalAlignment="Center"
+							   Foreground="{DynamicResource SukiLowText}" />
+					<TextBlock Text="{Binding LocalVirtualIp}"
+							   FontSize="{DynamicResource AppFontSizeCompact}"
+							   FontWeight="DemiBold"
+							   VerticalAlignment="Center"
+							   Foreground="{DynamicResource SukiPrimaryColor}" />
+					<TextBlock Text="{Binding LocalNetworkPrefix, StringFormat='（网段 {0}）'}"
+							   FontSize="{DynamicResource AppFontSizeSmall}"
+							   VerticalAlignment="Center"
+							   IsVisible="{Binding HasLocalVirtualIp}"
+							   Foreground="{DynamicResource SukiLowText}" />
+					<Button Classes="Basic"
+							Content="刷新"
+							Cursor="Hand"
+							Command="{Binding RefreshCommand}" />
+				</StackPanel>
+
+				<StackPanel Orientation="Horizontal" Spacing="8">
+					<Button Classes="Flat"
+							Content="扫描一次"
+							Cursor="Hand"
+							IsEnabled="{Binding CanScan}"
+							Command="{Binding ScanOnceCommand}" />
+					<Button Classes="Basic"
+							Content="{Binding ScanButtonText}"
+							Cursor="Hand"
+							Command="{Binding ToggleScanningCommand}" />
+					<Button Classes="Basic"
+							Content="清空"
+							Cursor="Hand"
+							Command="{Binding ClearPeersCommand}" />
+					<ProgressBar Width="80"
+								 Height="4"
+								 IsIndeterminate="True"
+								 VerticalAlignment="Center"
+								 IsVisible="{Binding IsBusy}" />
+				</StackPanel>
+
+				<TextBlock Text="{Binding StatusText}"
 						   FontSize="{DynamicResource AppFontSizeSmall}"
-						   VerticalAlignment="Center"
+						   TextWrapping="Wrap"
 						   Foreground="{DynamicResource SukiLowText}" />
-				<TextBlock Text="{Binding LocalVirtualIp}"
-						   FontSize="{DynamicResource AppFontSizeCompact}"
-						   FontWeight="DemiBold"
-						   VerticalAlignment="Center"
-						   Foreground="{DynamicResource SukiPrimaryColor}" />
-				<TextBlock Text="{Binding LocalNetworkPrefix, StringFormat='（网段 {0}）'}"
-						   FontSize="{DynamicResource AppFontSizeSmall}"
-						   VerticalAlignment="Center"
-						   IsVisible="{Binding HasLocalVirtualIp}"
-						   Foreground="{DynamicResource SukiLowText}" />
-				<Button Classes="Basic"
-						Content="刷新"
-						Cursor="Hand"
-						Command="{Binding RefreshCommand}" />
+
+				<ListBox ItemsSource="{Binding Peers}"
+						 SelectedItem="{Binding SelectedPeer}"
+						 MaxHeight="200"
+						 IsVisible="{Binding HasPeers}">
+					<ListBox.ItemTemplate>
+						<DataTemplate x:DataType="vm:VirtualLanPeerRow">
+							<Grid ColumnDefinitions="*,90,90">
+								<TextBlock Grid.Column="0" Text="{Binding VirtualIp}" />
+								<TextBlock Grid.Column="1"
+										   Text="{Binding LatencyText}"
+										   Foreground="{DynamicResource SukiLowText}" />
+								<TextBlock Grid.Column="2"
+										   Text="{Binding LastSeenText}"
+										   Foreground="{DynamicResource SukiLowText}" />
+							</Grid>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
+
 			</StackPanel>
-
-			<StackPanel Orientation="Horizontal" Spacing="8">
-				<Button Classes="Flat"
-						Content="扫描一次"
-						Cursor="Hand"
-						IsEnabled="{Binding CanScan}"
-						Command="{Binding ScanOnceCommand}" />
-				<Button Classes="Basic"
-						Content="{Binding ScanButtonText}"
-						Cursor="Hand"
-						Command="{Binding ToggleScanningCommand}" />
-				<Button Classes="Basic"
-						Content="清空"
-						Cursor="Hand"
-						Command="{Binding ClearPeersCommand}" />
-				<ProgressBar Width="80"
-							 Height="4"
-							 IsIndeterminate="True"
-							 VerticalAlignment="Center"
-							 IsVisible="{Binding IsBusy}" />
-			</StackPanel>
-
-			<TextBlock Text="{Binding StatusText}"
-					   FontSize="{DynamicResource AppFontSizeSmall}"
-					   TextWrapping="Wrap"
-					   Foreground="{DynamicResource SukiLowText}" />
-
-			<ListBox ItemsSource="{Binding Peers}"
-					 SelectedItem="{Binding SelectedPeer}"
-					 MaxHeight="200"
-					 IsVisible="{Binding HasPeers}">
-				<ListBox.ItemTemplate>
-					<DataTemplate x:DataType="vm:VirtualLanPeerRow">
-						<Grid ColumnDefinitions="*,90,90">
-							<TextBlock Grid.Column="0" Text="{Binding VirtualIp}" />
-							<TextBlock Grid.Column="1"
-									   Text="{Binding LatencyText}"
-									   Foreground="{DynamicResource SukiLowText}" />
-							<TextBlock Grid.Column="2"
-									   Text="{Binding LastSeenText}"
-									   Foreground="{DynamicResource SukiLowText}" />
-						</Grid>
-					</DataTemplate>
-				</ListBox.ItemTemplate>
-			</ListBox>
-
-		</StackPanel>
-	</Border>
+		</suki:GroupBox>
+	</suki:GlassCard>
 </UserControl>

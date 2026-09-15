@@ -1,0 +1,4 @@
+service: NOT FOUND
+exe exists: True
+info: 232 ms, output=[C:\ProgramData\ZeroTier\One\zerotier-one_x64.exe: authtoken.secret not found or readable in C:\ProgramData\ZeroTier\One (try again as root) | System.Management.Automation.RemoteException]
+listnetworks: 265 ms, output=[C:\ProgramData\ZeroTier\One\zerotier-one_x64.exe: authtoken.secret not found or readable in C:\ProgramData\ZeroTier\One (try again as root) | System.Management.Automation.RemoteException]

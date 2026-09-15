@@ -74,7 +74,8 @@ public partial class MainViewModel : BaseViewModel
         {
             Ioc.Default.GetRequiredService<HomeViewModel>(),
             Ioc.Default.GetRequiredService<GameSessionViewModel>(),
-            Ioc.Default.GetRequiredService<SettingsViewModel>()
+            Ioc.Default.GetRequiredService<SettingsViewModel>(),
+            Ioc.Default.GetRequiredService<LogsViewModel>()
         };
 
         ActivePage = Pages[0];

@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.DependencyInjection;
 using kiriyamalauncher.Business;
+using kiriyamalauncher.Data;
 using kiriyamalauncher.Presentation.Base.Services;
 using kiriyamalauncher.Presentation.Base.Services.Dialogs;
 using kiriyamalauncher.Presentation.Base.Services.Notifications;
@@ -20,6 +21,7 @@ using Serilog.Events;
 using Serilog.Sinks.MemorySink;
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 
@@ -81,6 +83,21 @@ public partial class App : Application
 
     private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
+        // 退出时清理 ZeroTier：客户端引擎会离开全部已加入的网络（虚拟网卡随 leave 移除）
+        // 并停止系统服务，避免「启动器关了，ZeroTier 服务和一堆虚拟网卡还常驻后台」。
+        // libzt 引擎是进程内实现，随进程退出，其清理为空操作。整体限时，绝不卡死退出。
+        try
+        {
+            Task cleanup = Task.WhenAll(
+                Ioc.Default.GetServices<IZeroTierBackend>().Select(backend => backend.CleanupOnExitAsync()));
+
+            cleanup.Wait(TimeSpan.FromSeconds(15));
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "退出时清理 ZeroTier 失败（忽略）。");
+        }
+
         // 退出前把还在防抖里的字号等改动落库，避免「刚改完就关掉 → 没存上」。
         try
         {
@@ -126,7 +143,11 @@ public partial class App : Application
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 7,
                     shared: true)
-                .WriteTo.MemorySink(out ILogSource<LogEvent> logSource)
+                .WriteTo.MemorySink(out ILogSource<LogEvent> logSource, options =>
+                {
+                    // 内存日志只保留最近 5000 条，旧日志被挤出（文件里仍有全量）。
+                    options.MaxLogsCount = 5000;
+                })
                 .CreateLogger();
 
             _logSource = logSource;
@@ -181,7 +202,16 @@ public partial class App : Application
             .AddSingleton<IFilePickerService, AvaloniaFilePickerService>()
             .AddSingleton<IGameIntegrationViewModelFactory, GameIntegrationViewModelFactory>()
             .AddSingleton<LanDevicesViewModel>()
+            .AddSingleton<RoomsViewModel>()
             .AddSingleton<IAppSnapshot, AppSnapshot>();
+
+        // ZeroTier 传输后端工厂：根据偏好选择 Sockets（libzt 内嵌）还是 Client（客户端，尚未接入）。
+        // 工厂本身充当 IZeroTierService 的代理，消费者不用感知后端切换。
+        services.AddSingleton<IZeroTierService>(sp =>
+            new ZeroTierBackendFactory(
+                sp.GetServices<IZeroTierBackend>(),
+                () => sp.GetRequiredService<IAppSnapshot>().Preferences.ZeroTierTransportBackend,
+                sp.GetRequiredService<ILogger<ZeroTierBackendFactory>>()));
 
         // View models.
         foreach (Type assemblyType in Assembly.GetExecutingAssembly().GetTypes())

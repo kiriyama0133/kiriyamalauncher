@@ -4,6 +4,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using kiriyamalauncher.Business.Modules.UserProfile.ApplicationServices;
 using kiriyamalauncher.Business.Modules.UserProfile.DTOs;
+using kiriyamalauncher.Data;
 using kiriyamalauncher.Data.Entities;
 using Microsoft.Extensions.Logging;
 using SukiUI;
@@ -35,8 +36,12 @@ public class AppSnapshot : IAppSnapshot
     private const string DEFAULT_COLOR_THEME = "Blue";
     private const string DEFAULT_BASE_THEME = "Default";
 
+    /// <summary>OAuth 客户端标识（与服务端约定的桌面启动器 client_id）。</summary>
+    private const string CLIENT_ID = "kiriyamalauncher";
+
     private readonly IUserService _userService;
     private readonly IUserPreferencesService _preferencesService;
+    private readonly IRelayServerClient _relay;
     private readonly ILogger<AppSnapshot> _logger;
     private readonly SukiTheme _sukiTheme;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
@@ -48,10 +53,12 @@ public class AppSnapshot : IAppSnapshot
     public AppSnapshot(
         IUserService userService,
         IUserPreferencesService preferencesService,
+        IRelayServerClient relay,
         ILogger<AppSnapshot> logger)
     {
         _userService = userService;
         _preferencesService = preferencesService;
+        _relay = relay;
         _logger = logger;
         _sukiTheme = SukiTheme.GetInstance();
     }
@@ -127,11 +134,28 @@ public class AppSnapshot : IAppSnapshot
         SavePreferencesImmediately("ZeroTier 网络 ID");
     }
 
+    public void UpdateSelfHostedNetworkId(string networkId)
+    {
+        string value = networkId.Trim().ToLowerInvariant();
+        if (string.Equals(Preferences.SelfHostedNetworkId, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Preferences.SelfHostedNetworkId = value;
+        SavePreferencesImmediately("自建控制器网络 ID");
+    }
+
     public void UpdateZeroTierConnectionMode(string connectionMode)
     {
-        string value = string.Equals(connectionMode, ZeroTierSettings.SelfHostedController, StringComparison.OrdinalIgnoreCase)
-            ? ZeroTierSettings.SelfHostedController
-            : ZeroTierSettings.OfficialController;
+        string value = connectionMode switch
+        {
+            _ when string.Equals(connectionMode, ZeroTierSettings.SelfHostedController, StringComparison.OrdinalIgnoreCase)
+                => ZeroTierSettings.SelfHostedController,
+            _ when string.Equals(connectionMode, ZeroTierSettings.RelayServer, StringComparison.OrdinalIgnoreCase)
+                => ZeroTierSettings.RelayServer,
+            _ => ZeroTierSettings.OfficialController,
+        };
 
         if (string.Equals(Preferences.ZeroTierConnectionMode, value, StringComparison.Ordinal))
         {
@@ -140,6 +164,45 @@ public class AppSnapshot : IAppSnapshot
 
         Preferences.ZeroTierConnectionMode = value;
         SavePreferencesImmediately("ZeroTier 连接模式");
+    }
+
+    public void UpdateRelayServerIp(string relayServerIp)
+    {
+        string value = relayServerIp.Trim();
+        if (string.Equals(Preferences.RelayServerIp, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Preferences.RelayServerIp = value;
+        SavePreferencesImmediately("中继服务器 IP");
+    }
+
+    public void UpdateRelayServerPort(int relayServerPort)
+    {
+        int value = relayServerPort is > 0 and <= 65535 ? relayServerPort : ZeroTierSettings.DefaultRelayServerPort;
+        if (Preferences.RelayServerPort == value)
+        {
+            return;
+        }
+
+        Preferences.RelayServerPort = value;
+        SavePreferencesImmediately("中继服务器端口");
+    }
+
+    public void UpdateZeroTierTransportBackend(string transportBackend)
+    {
+        string value = string.Equals(transportBackend, ZeroTierSettings.ClientBackend, StringComparison.OrdinalIgnoreCase)
+            ? ZeroTierSettings.ClientBackend
+            : ZeroTierSettings.SocketsBackend;
+
+        if (string.Equals(Preferences.ZeroTierTransportBackend, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Preferences.ZeroTierTransportBackend = value;
+        SavePreferencesImmediately("ZeroTier 传输引擎");
     }
 
     public void UpdateBaseTheme(string baseTheme)
@@ -168,42 +231,110 @@ public class AppSnapshot : IAppSnapshot
         SavePreferencesImmediately("配色主题");
     }
 
-    public async Task<bool> SignInAsync(string loginNameOrEmail, string password)
+    public async Task SignInAsync(string email, string password)
     {
-        string identifier = loginNameOrEmail.Trim();
-
-        // 测试阶段不做真实鉴权（password 不参与），只是看看账号库里有没有这条记录。
-        UserDto? existing = await _userService.FindByLoginAsync(identifier);
-
-        if (existing is not null)
+        string baseUrl = ResolveRelayBaseUrl();
+        if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            User = existing;
-        }
-        else
-        {
-            User.Nickname = identifier;
-            User.LoginName = identifier;
-            User.ProfileUpdatedAt = DateTime.Now;
-            await SaveUserAsync();
+            throw new RelayServerException("请先在设置里填写中继服务器地址。");
         }
 
-        RaiseChanged();
+        try
+        {
+            // PKCE：先随机生成 code_verifier，再算它的 S256 code_challenge 交给登录端点。
+            string codeVerifier = RelayPkce.GenerateCodeVerifier();
+            string codeChallenge = RelayPkce.ComputeCodeChallenge(codeVerifier);
 
-        _logger.LogInformation("登录：{Identifier}（匹配到已有账号：{Matched}）。", identifier, existing is not null);
+            RelayAuthorizationCode authorizationCode = await _relay.LoginAsync(
+                baseUrl, email.Trim(), password, codeChallenge);
 
-        return existing is not null;
+            RelayTokenSet tokens = await _relay.ExchangeCodeAsync(
+                baseUrl, authorizationCode.Code, codeVerifier, CLIENT_ID);
+
+            ApplySignedIn(email.Trim(), tokens);
+        }
+        catch (RelayServerException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new RelayServerException($"无法连接中继服务器：{ex.Message}", ex);
+        }
     }
 
-    public async Task RegisterAsync(string loginName, string nickname, string email, string password)
+    public async Task RegisterAsync(string email, string password, string displayName)
     {
-        // 测试阶段：password 只用于界面校验，不写入数据库。
-        User.LoginName = loginName.Trim();
-        User.Nickname = string.IsNullOrWhiteSpace(nickname) ? User.LoginName : nickname.Trim();
-        User.Email = email.Trim();
+        string baseUrl = ResolveRelayBaseUrl();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new RelayServerException("请先在设置里填写中继服务器地址。");
+        }
+
+        string normalizedEmail = email.Trim();
+        string normalizedDisplayName = string.IsNullOrWhiteSpace(displayName) ? normalizedEmail : displayName.Trim();
+
+        try
+        {
+            await _relay.RegisterAsync(baseUrl, normalizedEmail, password, normalizedDisplayName);
+
+            // 注册成功后自动登录：直接走 PKCE 换令牌，让用户无需再手动登录一次。
+            string codeVerifier = RelayPkce.GenerateCodeVerifier();
+            string codeChallenge = RelayPkce.ComputeCodeChallenge(codeVerifier);
+
+            RelayAuthorizationCode authorizationCode = await _relay.LoginAsync(
+                baseUrl, normalizedEmail, password, codeChallenge);
+
+            RelayTokenSet tokens = await _relay.ExchangeCodeAsync(
+                baseUrl, authorizationCode.Code, codeVerifier, CLIENT_ID);
+
+            ApplySignedIn(normalizedEmail, tokens);
+        }
+        catch (RelayServerException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new RelayServerException($"无法连接中继服务器：{ex.Message}", ex);
+        }
+    }
+
+    /// <summary>登录 / 注册成功后，把账号信息与令牌写进快照并落库。</summary>
+    private void ApplySignedIn(string email, RelayTokenSet tokens)
+    {
+        User.Nickname = string.IsNullOrWhiteSpace(User.Nickname) ? email : User.Nickname;
+        User.LoginName = email;
+        User.Email = email;
+        User.AccessToken = tokens.AccessToken;
+        User.RefreshToken = tokens.RefreshToken;
+        User.AccessTokenExpiresAt = DateTime.UtcNow.AddSeconds(tokens.ExpiresIn);
         User.ProfileUpdatedAt = DateTime.Now;
 
-        await SaveUserAsync();
+        _userDirty = true;
         RaiseChanged();
+
+        _ = Task.Run(SaveUserAsync);
+    }
+
+    /// <summary>从偏好拼出中继服务器 baseUrl；没配置时返回空串。</summary>
+    private string ResolveRelayBaseUrl()
+    {
+        string ip = (Preferences.RelayServerIp ?? string.Empty).Trim();
+        int port = Preferences.RelayServerPort;
+
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            return string.Empty;
+        }
+
+        if (ip.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || ip.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return ip.TrimEnd('/');
+        }
+
+        return $"http://{ip}:{port}";
     }
 
     public async Task SignOutAsync()
@@ -212,6 +343,9 @@ public class AppSnapshot : IAppSnapshot
         User.LoginName = string.Empty;
         User.Nickname = string.Empty;
         User.Email = string.Empty;
+        User.AccessToken = string.Empty;
+        User.RefreshToken = string.Empty;
+        User.AccessTokenExpiresAt = null;
         User.ProfileUpdatedAt = DateTime.Now;
 
         await SaveUserAsync();
@@ -259,12 +393,36 @@ public class AppSnapshot : IAppSnapshot
             Preferences.ZeroTierNetworkId = ZeroTierSettings.DefaultNetworkId;
         }
 
+        // 自建控制器网络 ID 没有合理的默认值（由用户自己的控制器生成），无效时清空，
+        // 让连接流程在自建模式下提示用户填写。
+        if (!ZeroTierSettings.IsValidNetworkId(Preferences.SelfHostedNetworkId))
+        {
+            Preferences.SelfHostedNetworkId = string.Empty;
+        }
+
         Preferences.ZeroTierConnectionMode = string.Equals(
             Preferences.ZeroTierConnectionMode,
             ZeroTierSettings.SelfHostedController,
             StringComparison.OrdinalIgnoreCase)
             ? ZeroTierSettings.SelfHostedController
-            : ZeroTierSettings.OfficialController;
+            : string.Equals(
+                Preferences.ZeroTierConnectionMode,
+                ZeroTierSettings.RelayServer,
+                StringComparison.OrdinalIgnoreCase)
+                ? ZeroTierSettings.RelayServer
+                : ZeroTierSettings.OfficialController;
+
+        if (Preferences.RelayServerPort is < 1 or > 65535)
+        {
+            Preferences.RelayServerPort = ZeroTierSettings.DefaultRelayServerPort;
+        }
+
+        Preferences.ZeroTierTransportBackend = string.Equals(
+            Preferences.ZeroTierTransportBackend,
+            ZeroTierSettings.ClientBackend,
+            StringComparison.OrdinalIgnoreCase)
+            ? ZeroTierSettings.ClientBackend
+            : ZeroTierSettings.SocketsBackend;
 
         Preferences.FontSize = Math.Clamp(Math.Round(Preferences.FontSize), MIN_FONT_SIZE, MAX_FONT_SIZE);
 

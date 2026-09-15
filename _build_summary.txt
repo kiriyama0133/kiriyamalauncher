@@ -1,0 +1,9 @@
+errors_found=0
+F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\Views/SignInDialogView.axaml(34,6,34,6): Avalonia warning AVLN5001: 'TextBox.Watermark' is obsolete: Use PlaceholderText instead. [F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\kiriyamalauncher.Presentation.csproj]
+F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\Views/SignInDialogView.axaml(42,5,42,5): Avalonia warning AVLN5001: 'TextBox.Watermark' is obsolete: Use PlaceholderText instead. [F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\kiriyamalauncher.Presentation.csproj]
+F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\Views/SignInDialogView.axaml(50,6,50,6): Avalonia warning AVLN5001: 'TextBox.Watermark' is obsolete: Use PlaceholderText instead. [F:\KiriyamaLauncher\kiriyamalauncher\kiriyamalauncher.Presentation\kiriyamalauncher.Presentation.csproj]
+    19 涓鍛?
+    0 涓敊璇?
+
+宸茬敤鏃堕棿 00:00:10.36
+

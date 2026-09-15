@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="360" d:DesignHeight="300"
+             x:Class="kiriyamalauncher.Presentation.Views.CreateRoomDialogView"
+             x:DataType="vm:CreateRoomDialogViewModel"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
+			 Width="360">
+
+	<sukiUi:BusyArea BusyText="正在创建……" IsBusy="{Binding IsSubmitting}">
+		<StackPanel Spacing="4">
+
+			<TextBlock Text="创建房间" FontSize="{DynamicResource AppFontSizeSubtitle}" FontWeight="DemiBold"
+					   Margin="0,4,0,18" HorizontalAlignment="Center" />
+
+			<TextBlock Text="房间名" FontWeight="DemiBold" Margin="6,0,0,3" Foreground="{DynamicResource SukiLowText}" />
+			<TextBox Text="{Binding RoomName}" Watermark="给房间起个名字" />
+
+			<TextBlock Text="房间密码（可选）" FontWeight="DemiBold" Margin="6,14,0,3" Foreground="{DynamicResource SukiLowText}" />
+			<TextBox Text="{Binding Password}" PasswordChar="*" Watermark="留空表示任何人都能加入" />
+
+			<TextBlock Text="{Binding Error}" Margin="6,8,0,0" FontSize="{DynamicResource AppFontSizeSmall}"
+					   Foreground="{DynamicResource ErrorBrush}"
+					   IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+			<Button Classes="Flat" Margin="0,22,0,0" HorizontalAlignment="Center" Width="160" Height="40"
+					Content="创建" Command="{Binding ConfirmCommand}" />
+
+		</StackPanel>
+	</sukiUi:BusyArea>
+</UserControl>

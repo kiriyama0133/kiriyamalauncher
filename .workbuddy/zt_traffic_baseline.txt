@@ -1,0 +1,21 @@
+﻿
+Name                             ReceivedBytes ReceivedUnicastPackets       SentBytes SentUnicastPackets
+----                             ------------- ----------------------       --------- ------------------
+以太网 3                                        0                      0               0                  0
+
+
+
+
+Name                             ReceivedBytes ReceivedUnicastPackets       SentBytes SentUnicastPackets
+----                             ------------- ----------------------       --------- ------------------
+以太网 7                                        0                      0               0                  0
+
+
+
+
+Name                             ReceivedBytes ReceivedUnicastPackets       SentBytes SentUnicastPackets
+----                             ------------- ----------------------       --------- ------------------
+以太网 6                                        0                      0               0                  0
+
+
+

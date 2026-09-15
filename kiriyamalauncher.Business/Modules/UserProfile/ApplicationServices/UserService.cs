@@ -43,7 +43,10 @@ public class UserService : IUserService
             LoginName = user.LoginName,
             Email = user.Email,
             CreatedAt = user.CreatedAt,
-            ProfileUpdatedAt = DateTime.Now
+            ProfileUpdatedAt = DateTime.Now,
+            AccessToken = user.AccessToken,
+            RefreshToken = user.RefreshToken,
+            AccessTokenExpiresAt = user.AccessTokenExpiresAt
         };
 
         await _userRepository.SaveAsync(entity, cancellationToken);
@@ -59,6 +62,9 @@ public class UserService : IUserService
         LoginName = user.LoginName,
         Email = user.Email,
         CreatedAt = user.CreatedAt,
-        ProfileUpdatedAt = user.ProfileUpdatedAt
+        ProfileUpdatedAt = user.ProfileUpdatedAt,
+        AccessToken = user.AccessToken,
+        RefreshToken = user.RefreshToken,
+        AccessTokenExpiresAt = user.AccessTokenExpiresAt
     };
 }

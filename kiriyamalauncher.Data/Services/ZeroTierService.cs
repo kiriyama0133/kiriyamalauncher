@@ -1,3 +1,4 @@
+using kiriyamalauncher.Data.Entities;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace kiriyamalauncher.Data;
 /// 基于 ZeroTier.Sockets（libzt）内嵌节点的实现：
 /// 不需要安装 ZeroTier 客户端，也不需要虚拟网卡驱动。
 /// </summary>
-public class ZeroTierService : IZeroTierService, IDisposable
+public class ZeroTierService : IZeroTierBackend, IDisposable
 {
     /// <summary>libzt 的成功返回码。</summary>
     private const int LIBZT_SUCCESS = 0;
@@ -23,8 +24,14 @@ public class ZeroTierService : IZeroTierService, IDisposable
     /// <summary>等待节点上线的最长时间。</summary>
     private static readonly TimeSpan NODE_ONLINE_TIMEOUT = TimeSpan.FromSeconds(20);
 
+    /// <summary>等待节点身份（identity）加载完成的最长时间。</summary>
+    private static readonly TimeSpan NODE_IDENTITY_TIMEOUT = TimeSpan.FromSeconds(10);
+
     /// <summary>等待加入网络（拿到虚拟 IP）的最长时间。</summary>
     private static readonly TimeSpan JOIN_TIMEOUT = TimeSpan.FromSeconds(30);
+
+    /// <summary>libzt 的 Join 原生调用的超时时间（identity 未加载完时调用 Join 可能阻塞）。</summary>
+    private static readonly TimeSpan JOIN_CALL_TIMEOUT = TimeSpan.FromSeconds(15);
 
     /// <summary>libzt 里的 moon 轨道接口（托管包装没有公开，这里直接 P/Invoke）。</summary>
     [DllImport("libzt", EntryPoint = "CSharp_zts_moon_orbit")]
@@ -54,6 +61,12 @@ public class ZeroTierService : IZeroTierService, IDisposable
     }
 
     public bool IsStarted => _node is not null;
+
+    /// <inheritdoc />
+    public string Kind => ZeroTierSettings.SocketsBackend;
+
+    /// <inheritdoc />
+    public string ConnectionMode { get; set; } = ZeroTierSettings.OfficialController;
 
     /// <inheritdoc />
     public IReadOnlyList<ulong> JoinedNetworkIds => _joinedNetworkIds.ToArray();
@@ -149,9 +162,26 @@ public class ZeroTierService : IZeroTierService, IDisposable
             }
 
             _node = node;
+
+            // 身份（identity）是异步加载的：先等节点 ID 出来，日志和通知里才有有效的节点 ID
+            // （用户需要拿它去 my.zerotier.com / 自建控制器做授权）。
+            await WaitUntilAsync(() => !string.IsNullOrEmpty(node.IdString), NODE_IDENTITY_TIMEOUT, cancellationToken);
             _logger.LogInformation("ZeroTier 节点已启动，节点 ID：{NodeId}", node.IdString);
 
             await WaitUntilAsync(() => node.Online, NODE_ONLINE_TIMEOUT, cancellationToken);
+
+            // 超时不再静默：节点不在线时加入网络只会一直等不到配置，必须让用户知道原因。
+            if (node.Online)
+            {
+                _logger.LogInformation("ZeroTier 节点已上线。");
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "ZeroTier 节点 {Seconds} 秒内未上线：可能连不上根服务器（官方 planet 或 moon）。加入请求会先排队，节点上线后自动生效。",
+                    NODE_ONLINE_TIMEOUT.TotalSeconds);
+                EventRaised?.Invoke(this, "节点尚未上线：可能无法连接 ZeroTier 根服务器，请检查网络或 moon 设置。");
+            }
 
             return GetStatus(_networkId);
         }
@@ -168,9 +198,10 @@ public class ZeroTierService : IZeroTierService, IDisposable
             throw new InvalidOperationException("ZeroTier 节点还没有启动。");
         }
 
-        await Task.Yield();
+        // 原生调用必须放到线程池：直接在调用线程（UI 线程）上执行的话，
+        // moon 状态异常时会把整个界面冻住。
+        int result = await Task.Run(() => zts_moon_orbit(moonId, moonId), cancellationToken);
 
-        int result = zts_moon_orbit(moonId, moonId);
         if (result == LIBZT_SUCCESS)
         {
             _logger.LogInformation("已围绕 moon {MoonId:x} 建立轨道。", moonId);
@@ -180,8 +211,6 @@ public class ZeroTierService : IZeroTierService, IDisposable
             _logger.LogWarning("moon 轨道设置失败，返回码 {Code}。", result);
             throw new InvalidOperationException($"moon 轨道设置失败（{result}）。");
         }
-
-        await Task.CompletedTask;
     }
 
     public async Task<ZeroTierStatus> JoinNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)
@@ -195,8 +224,12 @@ public class ZeroTierService : IZeroTierService, IDisposable
 
         _networkId = networkId;
 
-        // 同样是原生调用，放到线程池上避免阻塞界面线程。
-        int joinResult = await Task.Run(() => node.Join(networkId), cancellationToken);
+        // 日志打在 Join 之前：libzt 的 Join 在节点身份未加载完时可能阻塞，
+        // 卡住时至少能从日志看到「已经走到这一步」。
+        _logger.LogInformation("正在加入网络 {NetworkId:x16}（节点在线：{Online}，节点 ID：{NodeId}）……", networkId, node.Online, node.IdString);
+
+        // 原生 Join 放到线程池并加超时保护：实测 identity 未加载完时调用可能永久阻塞。
+        int joinResult = await JoinWithTimeoutAsync(node, networkId, cancellationToken);
         _logger.LogInformation("正在加入网络 {NetworkId:x}……（返回码 {Code}）", networkId, joinResult);
 
         if (joinResult == LIBZT_SUCCESS && !_joinedNetworkIds.Contains(networkId))
@@ -229,6 +262,16 @@ public class ZeroTierService : IZeroTierService, IDisposable
 
         ZeroTierStatus status = GetStatus(networkId);
 
+        // 等不到地址就把当前网络状态写进日志并抛给界面：最常见的两个原因是
+        // 「节点没上线」和「节点未被授权」（要去 my.zerotier.com / 控制器勾 Auth）。
+        if (!status.IsTransportReady)
+        {
+            _logger.LogWarning(
+                "加入网络 {NetworkId:x16} 等待 {Seconds} 秒后仍未就绪：{StatusText}（节点在线：{Online}）。",
+                networkId, JOIN_TIMEOUT.TotalSeconds, status.StatusText, node.Online);
+            EventRaised?.Invoke(this, $"网络 {networkId:x16}：{status.StatusText}");
+        }
+
         // 网络就绪后开一个 Ping 响应器：别的机器可以直接 ping 本机的虚拟 IP。
         if (status.IsTransportReady)
         {
@@ -236,6 +279,24 @@ public class ZeroTierService : IZeroTierService, IDisposable
         }
 
         return status;
+    }
+
+    /// <summary>
+    /// 带超时的 Join：libzt 的 Join 是原生调用，节点身份未加载完时可能永久阻塞，
+    /// 超时后抛出异常让上层给出明确错误（而不是永远停在「正在加入网络」）。
+    /// </summary>
+    private static async Task<int> JoinWithTimeoutAsync(ZeroTier.Core.Node node, ulong networkId, CancellationToken cancellationToken)
+    {
+        Task<int> joinTask = Task.Run(() => node.Join(networkId), cancellationToken);
+        Task completed = await Task.WhenAny(joinTask, Task.Delay(JOIN_CALL_TIMEOUT, cancellationToken));
+
+        if (completed != joinTask)
+        {
+            throw new TimeoutException(
+                "libzt 的加入网络调用超过 15 秒没有返回（节点可能尚未完成初始化）。请重启应用后重试。");
+        }
+
+        return await joinTask;
     }
 
     public ZeroTierStatus GetStatus(ulong networkId)
@@ -269,6 +330,9 @@ public class ZeroTierService : IZeroTierService, IDisposable
             transportReady,
             DescribeNetworkStatus(status, transportReady));
     }
+
+    /// <inheritdoc />
+    public Task CleanupOnExitAsync() => Task.CompletedTask;
 
     public void Stop()
     {
@@ -502,18 +566,34 @@ public class ZeroTierService : IZeroTierService, IDisposable
 
     private void OnZeroTierEvent(ZeroTier.Core.Event e)
     {
-        _logger.LogDebug("ZeroTier 事件：{Code} {Name}", e.Code, e.Name);
+        // 节点/网络相关的关键事件必须用 Information 记录（Debug 会被 MinimumLevel 吞掉，
+        // 排查「卡在加入网络」时就全是盲区），并同时抛给界面显示进度。
+        string FormatNetwork()
+            => e.NetworkInfo is null ? string.Empty : $" {e.NetworkInfo.Id:x16}";
 
-        string? message = e.Code switch
+        string? description = e.Code switch
         {
             201 => "节点已上线",
-            213 => $"网络配置已就绪：{e.NetworkInfo?.Id:x16}",
+            202 => "节点已离线（连不上根服务器 / moon）",
+            210 => $"网络不存在{FormatNetwork()}",
+            211 => $"客户端版本过旧，被网络拒绝{FormatNetwork()}",
+            212 => $"正在向控制器请求网络配置{FormatNetwork()}……",
+            213 => $"网络配置已就绪{FormatNetwork()}",
+            214 => $"网络拒绝访问（节点未被授权，需要勾选 Auth）{FormatNetwork()}",
+            215 => $"网络已就绪（IPv4）{FormatNetwork()}",
+            216 => $"网络已就绪（IPv6）{FormatNetwork()}",
+            217 => $"网络已断开{FormatNetwork()}",
             _ => null
         };
 
-        if (message is not null)
+        if (description is not null)
         {
-            EventRaised?.Invoke(this, message);
+            _logger.LogInformation("ZeroTier 事件 {Code}：{Description}", e.Code, description);
+            EventRaised?.Invoke(this, description);
+        }
+        else
+        {
+            _logger.LogDebug("ZeroTier 事件：{Code} {Name}", e.Code, e.Name);
         }
     }
 }
