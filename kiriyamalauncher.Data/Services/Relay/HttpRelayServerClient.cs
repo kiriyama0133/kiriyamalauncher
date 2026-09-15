@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -152,6 +153,71 @@ public class HttpRelayServerClient : IRelayServerClient
     }
 
     /// <inheritdoc />
+    public async Task LeaveRoomAsync(string baseUrl, string roomId, string nodeId, CancellationToken cancellationToken = default)
+    {
+        using HttpClient client = CreateClient();
+        using StringContent content = BuildJson(
+            new LeaveRoomRequestDto { NodeId = nodeId },
+            RelayJsonContext.Default.LeaveRoomRequestDto);
+
+        using HttpResponseMessage response = await client
+            .PostAsync($"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/leave", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
+
+        switch ((int)response.StatusCode)
+        {
+            case 404:
+                throw new RelayServerException("房间不存在或已关闭。");
+        }
+
+        EnsureSuccess(response, json);
+    }
+
+    /// <inheritdoc />
+    public async Task<RelayRoomPlayers> ListPlayersAsync(string baseUrl, string roomId, CancellationToken cancellationToken = default)
+    {
+        using HttpClient client = CreateClient();
+        using HttpResponseMessage response = await client
+            .GetAsync($"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/players", cancellationToken)
+            .ConfigureAwait(false);
+
+        string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
+
+        switch ((int)response.StatusCode)
+        {
+            case 404:
+                throw new RelayServerException("房间不存在或已关闭。");
+        }
+
+        EnsureSuccess(response, json);
+
+        try
+        {
+            RelayRoomPlayersDto? dto = JsonSerializer.Deserialize(json, RelayJsonContext.Default.RelayRoomPlayersDto);
+            if (dto is null)
+            {
+                throw new RelayServerException("服务器没有返回房间成员数据。");
+            }
+
+            IReadOnlyList<RelayPlayer> players = (dto.Players ?? [])
+                .Select(p => new RelayPlayer(
+                    p.PlayerId,
+                    p.Nickname ?? string.Empty,
+                    p.NodeId ?? string.Empty,
+                    p.VirtualIp ?? string.Empty))
+                .ToList();
+
+            return new RelayRoomPlayers(dto.RoomId ?? string.Empty, dto.RoomName ?? string.Empty, players);
+        }
+        catch (JsonException ex)
+        {
+            throw new RelayServerException("服务器返回了无法识别的房间成员数据。", ex);
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<RelayRegisteredAccount> RegisterAsync(string baseUrl, string email, string password, string? displayName, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
@@ -216,7 +282,7 @@ public class HttpRelayServerClient : IRelayServerClient
             LoginDto? dto = JsonSerializer.Deserialize(json, RelayJsonContext.Default.LoginDto);
             return dto is null || string.IsNullOrEmpty(dto.Code)
                 ? throw new RelayServerException("服务器没有返回授权码。")
-                : new RelayAuthorizationCode(dto.Code, dto.ExpiresAt);
+                : new RelayAuthorizationCode(dto.Code, dto.ExpiresAt, dto.DisplayName ?? string.Empty);
         }
         catch (JsonException ex)
         {

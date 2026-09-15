@@ -42,6 +42,12 @@ internal sealed class JoinRoomRequestDto
     public string? Password { get; set; }
 }
 
+/// <summary>离开房间请求体（camelCase）。</summary>
+internal sealed class LeaveRoomRequestDto
+{
+    public string NodeId { get; set; } = string.Empty;
+}
+
 /// <summary>服务端 ProblemDetails 错误体（RFC 7807，用于提取可读的错误描述）。</summary>
 internal sealed class ProblemDetailsDto
 {
@@ -71,6 +77,7 @@ internal sealed class LoginDto
 {
     public string? Code { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
+    public string? DisplayName { get; set; }
 }
 
 /// <summary>登录请求体（camelCase）。</summary>
@@ -90,6 +97,23 @@ internal sealed class TokenDto
     public string? RefreshToken { get; set; }
 }
 
+/// <summary>协议里的房间成员列表响应 JSON 结构（camelCase）。</summary>
+internal sealed class RelayRoomPlayersDto
+{
+    public string? RoomId { get; set; }
+    public string? RoomName { get; set; }
+    public List<RelayPlayerDto>? Players { get; set; }
+}
+
+/// <summary>协议里的单个玩家 JSON 结构（camelCase）。</summary>
+internal sealed class RelayPlayerDto
+{
+    public Guid PlayerId { get; set; }
+    public string? Nickname { get; set; }
+    public string? NodeId { get; set; }
+    public string? VirtualIp { get; set; }
+}
+
 /// <summary>
 /// 中继协议的 JSON 源生成上下文。
 /// NativeAOT 发布下反射序列化被禁用（IsReflectionEnabledByDefault=false），
@@ -102,12 +126,16 @@ internal sealed class TokenDto
 [JsonSerializable(typeof(RelayGameDto))]
 [JsonSerializable(typeof(CreateRoomRequestDto))]
 [JsonSerializable(typeof(JoinRoomRequestDto))]
+[JsonSerializable(typeof(LeaveRoomRequestDto))]
 [JsonSerializable(typeof(ProblemDetailsDto))]
 [JsonSerializable(typeof(RegisterRequestDto))]
 [JsonSerializable(typeof(RegisterDto))]
 [JsonSerializable(typeof(LoginRequestDto))]
 [JsonSerializable(typeof(LoginDto))]
 [JsonSerializable(typeof(TokenDto))]
+[JsonSerializable(typeof(RelayRoomPlayersDto))]
+[JsonSerializable(typeof(List<RelayPlayerDto>))]
+[JsonSerializable(typeof(RelayPlayerDto))]
 internal sealed partial class RelayJsonContext : JsonSerializerContext
 {
 }

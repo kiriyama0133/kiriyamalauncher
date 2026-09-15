@@ -1,0 +1,103 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="520"
+             x:Class="kiriyamalauncher.Presentation.Views.RoomView"
+             x:DataType="vm:RoomPageViewModel"
+			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:i="using:Material.Icons.Avalonia"
+			 xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI">
+
+	<UserControl.Styles>
+		<!-- 成员卡片：与其他玻璃卡片统一（CornerRadius 14 / Padding 18 / 拉伸）。 -->
+		<Style Selector="suki|GlassCard.playerCard">
+			<Setter Property="CornerRadius" Value="14" />
+			<Setter Property="Padding" Value="18" />
+			<Setter Property="HorizontalAlignment" Value="Stretch" />
+			<Setter Property="Margin" Value="0,0,0,10" />
+		</Style>
+
+		<!-- 成员名称：半粗体。 -->
+		<Style Selector="TextBlock.playerName">
+			<Setter Property="FontWeight" Value="DemiBold" />
+			<Setter Property="FontSize" Value="{DynamicResource AppFontSizeSubtitle}" />
+		</Style>
+
+		<!-- 次要文本：延迟等。 -->
+		<Style Selector="TextBlock.playerMeta">
+			<Setter Property="Foreground" Value="{DynamicResource SukiLowText}" />
+			<Setter Property="FontSize" Value="{DynamicResource AppFontSizeSmall}" />
+			<Setter Property="VerticalAlignment" Value="Center" />
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Spacing="14">
+
+		<!-- 头部：房间名 + 房主 + 成员数 + 退出按钮。 -->
+		<Grid ColumnDefinitions="*,Auto">
+			<StackPanel Grid.Column="0" Spacing="4">
+				<StackPanel Orientation="Horizontal" Spacing="8">
+					<i:MaterialIcon Kind="DoorOpen" Width="20" Height="20" VerticalAlignment="Center"
+									Foreground="{DynamicResource SukiPrimaryColor}" />
+					<TextBlock Text="{Binding RoomName}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="DemiBold" />
+				</StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="10">
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<i:MaterialIcon Kind="Account" Width="14" Height="14" VerticalAlignment="Center"
+										Foreground="{DynamicResource SukiLowText}" />
+						<TextBlock Classes="playerMeta" Text="{Binding HostName, StringFormat='房主：{0}'}" />
+					</StackPanel>
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<i:MaterialIcon Kind="AccountMultiple" Width="14" Height="14" VerticalAlignment="Center"
+										Foreground="{DynamicResource SukiPrimaryColor}" />
+						<TextBlock Classes="playerMeta" Text="{Binding PlayerCountText}" FontWeight="DemiBold"
+								   Foreground="{DynamicResource SukiPrimaryColor}" />
+					</StackPanel>
+				</StackPanel>
+			</StackPanel>
+
+			<Button Grid.Column="1" Classes="Basic" Cursor="Hand" VerticalAlignment="Top"
+					Command="{Binding LeaveRoomCommand}">
+				<StackPanel Orientation="Horizontal" Spacing="6">
+					<i:MaterialIcon Kind="Logout" Width="15" Height="15" />
+					<TextBlock Text="退出房间" />
+				</StackPanel>
+			</Button>
+		</Grid>
+
+		<!-- 状态提示。 -->
+		<TextBlock Text="{Binding StatusText}" Classes="playerMeta" TextWrapping="Wrap" />
+
+		<!-- 空态：还没拉到成员。 -->
+		<TextBlock Text="正在获取房间成员……"
+				   HorizontalAlignment="Center" Opacity="0.6" Margin="0,20"
+				   IsVisible="{Binding !HasPlayers}" />
+
+		<!-- 成员列表：每名成员一张玻璃卡片，只显示名称 + 延迟。 -->
+		<ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto">
+			<ItemsControl ItemsSource="{Binding Players}">
+				<ItemsControl.ItemTemplate>
+					<DataTemplate DataType="{x:Type vm:RoomPlayerRow}">
+						<suki:GlassCard Classes="playerCard">
+							<Grid ColumnDefinitions="*,Auto">
+								<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+									<i:MaterialIcon Kind="AccountCircle" Width="18" Height="18" VerticalAlignment="Center"
+													Foreground="{DynamicResource SukiPrimaryColor}" />
+									<TextBlock Classes="playerName" Text="{Binding Name}" VerticalAlignment="Center" />
+								</StackPanel>
+
+								<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+									<i:MaterialIcon Kind="Speedometer" Width="14" Height="14" VerticalAlignment="Center"
+													Foreground="{DynamicResource SukiLowText}" />
+									<TextBlock Classes="playerMeta" Text="{Binding LatencyText}" />
+								</StackPanel>
+							</Grid>
+						</suki:GlassCard>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+		</ScrollViewer>
+
+	</StackPanel>
+</UserControl>

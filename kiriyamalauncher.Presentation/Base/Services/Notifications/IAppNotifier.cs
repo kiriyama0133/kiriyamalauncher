@@ -1,4 +1,5 @@
 using Avalonia.Controls.Notifications;
+using System;
 
 namespace kiriyamalauncher.Presentation.Base.Services.Notifications;
 
@@ -24,4 +25,11 @@ public interface IAppNotifier
 
     /// <summary>按指定类型弹提示。</summary>
     void Show(NotificationType type, string title, string? content = null);
+
+    /// <summary>
+    /// 弹一个「进行中」的 loading toast（带转圈动画，不会自动消失）。
+    /// 返回一个句柄，用完记得 <see cref="IDisposable.Dispose"/> 来关闭它——
+    /// 通常配合 <c>using</c> 包住一段异步操作。
+    /// </summary>
+    IDisposable ShowLoading(string title, string? content = null);
 }

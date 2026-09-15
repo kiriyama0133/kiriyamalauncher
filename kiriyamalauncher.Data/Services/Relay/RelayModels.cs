@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace kiriyamalauncher.Data;
 
@@ -23,6 +24,26 @@ public sealed record RelayRoom(
     public string PlayerCountText => MaxPlayers > 0 ? $"{PlayerCount} / {MaxPlayers}" : PlayerCount.ToString();
 }
 
+/// <summary>房间内的一名玩家（服务端返回，客户端做延迟探测）。</summary>
+/// <param name="PlayerId">玩家连接标识。</param>
+/// <param name="Nickname">玩家昵称（界面只显示这个）。</param>
+/// <param name="NodeId">玩家节点 ID。</param>
+/// <param name="VirtualIp">玩家虚拟 IP（延迟探测目标）。</param>
+public sealed record RelayPlayer(
+    Guid PlayerId,
+    string Nickname,
+    string NodeId,
+    string VirtualIp);
+
+/// <summary>房间详情（房间名 + 成员列表）。</summary>
+/// <param name="RoomId">房间标识。</param>
+/// <param name="RoomName">房间名。</param>
+/// <param name="Players">房间内玩家。</param>
+public sealed record RelayRoomPlayers(
+    string RoomId,
+    string RoomName,
+    IReadOnlyList<RelayPlayer> Players);
+
 /// <summary>中继服务器上的一个游戏板块（只读列表项）。</summary>
 /// <param name="Key">游戏稳定标识（如 civ6）。</param>
 /// <param name="DisplayName">游戏显示名（如「文明 6」）。</param>
@@ -34,10 +55,11 @@ public sealed record RelayGame(string Key, string DisplayName);
 /// <param name="DisplayName">显示名。</param>
 public sealed record RelayRegisteredAccount(string UserId, string Email, string DisplayName);
 
-/// <summary>登录第一步返回的一次性 PKCE 授权码。</summary>
+/// <summary>登录第一步返回的一次性 PKCE 授权码（附带显示名，登录后立即显示名称）。</summary>
 /// <param name="Code">授权码（短时有效、一次性）。</param>
 /// <param name="ExpiresAt">授权码过期时间。</param>
-public sealed record RelayAuthorizationCode(string Code, DateTimeOffset ExpiresAt);
+/// <param name="DisplayName">用户显示名。</param>
+public sealed record RelayAuthorizationCode(string Code, DateTimeOffset ExpiresAt, string DisplayName);
 
 /// <summary>OAuth token 端点返回的令牌集。</summary>
 /// <param name="AccessToken">访问令牌（JWT）。</param>

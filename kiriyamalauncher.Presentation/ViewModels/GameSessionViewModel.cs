@@ -213,8 +213,20 @@ public partial class GameSessionViewModel : PageViewModel
                     return;
                 }
 
-            await DisconnectAsync();
-            _appNotifier.Info("已断开虚拟局域网", "已断开连接并返回游戏列表。");
+                IsBusy = true;
+                try
+                {
+                    using (IDisposable loading = _appNotifier.ShowLoading("正在断开局域网", "正在离开虚拟局域网并清理虚拟网卡……"))
+                    {
+                        await DisconnectAsync();
+                    }
+                }
+                finally
+                {
+                    IsBusy = false;
+                }
+
+                _appNotifier.Info("已断开虚拟局域网", "已断开连接并返回游戏列表。");
             }
 
             IsInGameBoard = false;
@@ -247,7 +259,11 @@ public partial class GameSessionViewModel : PageViewModel
 
         try
         {
-            await DisconnectAsync();
+            using (IDisposable loading = _appNotifier.ShowLoading("正在断开局域网", "正在离开虚拟局域网并清理虚拟网卡……"))
+            {
+                await DisconnectAsync();
+            }
+
             StatusText = IDLE_BOARD_TEXT;
             _appNotifier.Info("已断开虚拟局域网", "已断开连接（后台节点保持在线，可以直接重新连接）。");
         }
@@ -280,14 +296,30 @@ public partial class GameSessionViewModel : PageViewModel
     /// </summary>
     private async Task DisconnectAsync()
     {
-        // 中继服务器模式：断开 = 离开房间大厅，不碰 ZeroTier。
+        // 中继服务器模式：断开 = 离开房间大厅 + 应用层断开 ZeroTier 网络（节点保持在线）。
         if (IsRelayServer)
         {
             Rooms.Disconnect();
-            _logger.LogInformation("已断开中继服务器。");
+            _logger.LogInformation("已断开中继服务器房间大厅。");
+
+            ulong relayNetworkId = _connectedNetworkId != 0 ? _connectedNetworkId : ParseNetworkIdOrDefault();
+            if (relayNetworkId != 0)
+            {
+                try
+                {
+                    await _zeroTier.DisconnectAsync(relayNetworkId);
+                    _logger.LogInformation("中继模式断开 ZeroTier 网络（应用层），网络 ID = {NetworkId:x}。", relayNetworkId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "中继模式断开 ZeroTier 网络失败，网络 ID = {NetworkId:x}。", relayNetworkId);
+                }
+            }
+
             _connectedNetworkId = 0;
             IsConnected = false;
             VirtualIp = string.Empty;
+            _suppressZeroTierEvents = true;
             return;
         }
 
@@ -314,20 +346,42 @@ public partial class GameSessionViewModel : PageViewModel
         _suppressZeroTierEvents = true;
     }
 
-    /// <summary>中继服务器模式（服务端联机）：连接房间大厅。</summary>
+    /// <summary>
+    /// 中继服务器模式（服务端联机）：连接房间大厅。
+    ///
+    /// 中继服务器模式本质上就是「自建控制器」：服务端自建 ZeroTier Controller 管理房间网络，
+    /// 用 Flow Rules + Tag 做房间隔离。所以连接流程要分两步：
+    ///   1. 先像自建控制器模式一样接入服务器管理的 ZeroTier 网络（启动节点 → 绕 moon → 加入
+    ///      自建控制器网络 ID），拿到本机节点 ID 与虚拟 IP；
+    ///   2. 再连 HTTP 房间大厅拉取房间列表。
+    /// 之后加入房间时服务端才能用 nodeId/virtualIp 给本机打房间 Tag。
+    /// </summary>
     private async Task ConnectToRelayServerAsync()
     {
         _logger.LogInformation("开始连接中继服务器（服务端联机）。");
-        StatusText = "正在连接中继服务器……";
 
+        // 第一步：接入自建控制器管理的 ZeroTier 网络（拿节点 ID + 虚拟 IP）。
+        StatusText = "正在接入中继服务器的 ZeroTier 网络……";
+        bool networkReady = await ConnectZeroTierAsync(allowOfficialFallback: false);
+
+        if (!networkReady)
+        {
+            IsConnected = false;
+            VirtualIp = string.Empty;
+            return;
+        }
+
+        // 第二步：连 HTTP 房间大厅。
+        StatusText = "正在连接房间大厅……";
         await Rooms.ConnectAsync();
 
         IsConnected = Rooms.IsConnected;
+        VirtualIp = IsConnected ? _zeroTier.LocalVirtualIp : string.Empty;
         StatusText = Rooms.StatusText;
 
         if (Rooms.IsConnected)
         {
-            _appNotifier.Success("已连接中继服务器", Rooms.StatusText);
+            _appNotifier.Success("已连接中继服务器", $"已接入 ZeroTier 网络，{Rooms.StatusText}");
         }
         else
         {
@@ -340,6 +394,145 @@ public partial class GameSessionViewModel : PageViewModel
         => ulong.TryParse(ResolveNetworkId(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong networkId)
             ? networkId
             : 0;
+
+    /// <summary>
+    /// 接入 ZeroTier 网络：启动内嵌节点 → 绕 moon → 加入目标网络，返回是否拿到虚拟 IP（transport ready）。
+    /// 中继服务器模式与自建控制器模式共用这一段；官方模式也可复用。
+    /// </summary>
+    /// <param name="allowOfficialFallback">
+    /// 为 true 时（官方/自建控制器模式）网络 ID 无效会回退到官方默认网络；为 false（中继服务器模式）
+    /// 时只认「自建控制器网络 ID」，拿不到就直接终止。
+    /// </param>
+    private async Task<bool> ConnectZeroTierAsync(bool allowOfficialFallback)
+    {
+        _logger.LogInformation(
+            "开始连接虚拟局域网：引擎 = {Backend}。",
+            IsClientBackend ? "Client（嵌入的 ZeroTier 客户端，走系统虚拟网卡）" : "Sockets（libzt 内嵌节点）");
+
+        StatusText = "正在启动 ZeroTier 节点……";
+        string storagePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "kiriyamalauncher",
+            "zerotier");
+
+        // 中继服务器模式本质就是自建控制器；moon 是自己搭的根节点，只有自建控制器/中继模式才绕月。
+        bool isSelfHosted = IsRelayServer || string.Equals(
+            _snapshot.Preferences.ZeroTierConnectionMode,
+            ZeroTierSettings.SelfHostedController,
+            StringComparison.OrdinalIgnoreCase);
+
+        // 把连接模式告诉后端：客户端引擎在官方模式下会自动把 planet 校准为官方根
+        // 服务器文件（首装后 planet 可能是自建污染文件，导致官方控制台看不到入网请求）。
+        _zeroTier.ConnectionMode = isSelfHosted
+            ? ZeroTierSettings.SelfHostedController
+            : ZeroTierSettings.OfficialController;
+
+        ZeroTierStatus status = await _zeroTier.StartAsync(storagePath);
+
+        // 启动失败（客户端未装 / 服务装不上、起不来 / 节点探测失败）直接终止，不再往下加入网络。
+        if (!status.IsStarted)
+        {
+            string reason = status.Error is not null ? status.Error.ToDisplayText() : status.StatusText;
+            _logger.LogWarning("ZeroTier 节点启动失败：{Reason}", status.Error?.ToLogText() ?? status.StatusText);
+            StatusText = $"ZeroTier 启动失败：{reason}";
+            _appNotifier.Error("ZeroTier 启动失败", reason);
+            return false;
+        }
+
+        _logger.LogInformation("ZeroTier 节点已启动：{NodeId}", status.NodeId);
+        _appNotifier.Info(
+            "ZeroTier 节点已启动",
+            string.IsNullOrWhiteSpace(status.NodeId) ? "节点 ID 获取中……" : $"节点 ID：{status.NodeId}");
+
+        if (isSelfHosted)
+        {
+            string moonIdText = string.IsNullOrWhiteSpace(_snapshot.Preferences.MoonServerIp)
+                ? ZeroTierSettings.DefaultMoonId
+                : _snapshot.Preferences.MoonServerIp.Trim();
+
+            if (ulong.TryParse(moonIdText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong moonId))
+            {
+                StatusText = $"正在围绕 moon {moonIdText} 建立轨道……";
+                await _zeroTier.OrbitMoonAsync(moonId);
+            }
+            else
+            {
+                _appNotifier.Warning("Moon 设置有误", $"「{moonIdText}」不是合法的 moon 节点 ID，已跳过绕月。");
+            }
+        }
+
+        string networkIdText = ResolveNetworkId();
+
+        // 中继服务器模式只认自建控制器网络 ID；自建控制器模式同理，拿不到就终止并提示。
+        if (!allowOfficialFallback && string.IsNullOrWhiteSpace(networkIdText))
+        {
+            StatusText = "请先到设置里填写「自建控制器网络 ID」。";
+            _appNotifier.Warning(
+                "缺少自建控制器网络 ID",
+                "中继服务器模式依赖服务端自建的 ZeroTier 控制器网络。请先到设置里填写「自建控制器网络 ID」（服务端 controller 生成的 16 位网络 ID）。");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(networkIdText))
+        {
+            StatusText = "请先到设置里填写「自建控制器网络 ID」。";
+            _appNotifier.Warning("缺少自建控制器网络 ID", "自建控制器模式下，请先到设置里填写你的控制器生成的 16 位网络 ID。");
+            return false;
+        }
+
+        StatusText = $"正在加入网络 {networkIdText}……";
+        ulong networkId = ulong.Parse(networkIdText, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        ZeroTierStatus joined = await _zeroTier.JoinNetworkAsync(networkId);
+        _logger.LogInformation(
+            "加入网络 {NetworkId:x} 结果：ready = {Ready}，虚拟 IP = {VirtualIp}，状态 = {StatusText}",
+            networkId, joined.IsTransportReady, joined.VirtualIp, joined.StatusText);
+
+        _connectedNetworkId = networkId;
+        VirtualIp = joined.IsTransportReady ? joined.VirtualIp : string.Empty;
+
+        // 接入虚拟局域网后：
+        // - 客户端引擎（真虚拟网卡）：游戏进程直接通过系统网卡互通，无需注入组件；
+        // - Sockets 引擎（libzt 内嵌）：需要开启常驻自动注入，让游戏进程出现就注入 Hook。
+        if (joined.IsTransportReady)
+        {
+            if (!IsClientBackend)
+            {
+                _launchService.StartAutoInject();
+
+                // 隧道是 Hook ↔ 启动器之间的管道：自动开一下，免得用户忘了点
+                // （忘了开的话，游戏里的广播只能被丢弃）。
+                LanDevices.TryAutoStartTunnel();
+            }
+        }
+
+        StatusText = joined.IsTransportReady
+            ? $"已接入虚拟局域网，虚拟 IP：{joined.VirtualIp}"
+            : $"网络状态：{joined.StatusText}";
+
+        if (joined.IsTransportReady)
+        {
+            _appNotifier.Success("已连接到虚拟局域网", $"虚拟 IP：{joined.VirtualIp}");
+
+            // 软断开的副作用：之前连过的网络还在（libzt 无法退网），换过 Network ID 就会同时挂在多个网络里。
+            ulong[] otherNetworks = _zeroTier.JoinedNetworkIds.Where(id => id != networkId).ToArray();
+            if (otherNetworks.Length > 0)
+            {
+                string others = string.Join('、', otherNetworks.Select(id => id.ToString("x16")));
+                _appNotifier.Warning("仍停留在旧网络", $"libzt 无法退网，节点还连着：{others}。要彻底离开请重启应用。");
+            }
+        }
+        else
+        {
+            string hint = isSelfHosted
+                ? "自建控制器模式下，请确认控制器已经启动并授权了这个节点。"
+                : "请到 my.zerotier.com 打开这个网络，把本机节点（见上一条通知里的节点 ID）勾选 Auth。";
+
+            string reason = joined.Error is not null ? joined.Error.ToDisplayText() : joined.StatusText;
+            _appNotifier.Warning("网络尚未就绪", $"{reason}\n{hint}");
+        }
+
+        return joined.IsTransportReady;
+    }
 
     /// <summary>
     /// 连接到虚拟局域网：启动内嵌 ZeroTier 节点 → 围绕 moon 建立轨道 → 加入网络 → 报告虚拟 IP。
@@ -358,131 +551,15 @@ public partial class GameSessionViewModel : PageViewModel
 
         try
         {
-            // 中继服务器模式：不走 ZeroTier，直接连房间大厅（服务端联机）。
+            // 中继服务器模式：接入自建控制器网络 + 连 HTTP 房间大厅（服务端联机）。
             if (IsRelayServer)
             {
                 await ConnectToRelayServerAsync();
                 return;
             }
 
-            _logger.LogInformation(
-                "开始连接虚拟局域网：引擎 = {Backend}。",
-                IsClientBackend ? "Client（嵌入的 ZeroTier 客户端，走系统虚拟网卡）" : "Sockets（libzt 内嵌节点）");
-
-            StatusText = "正在启动 ZeroTier 节点……";
-            string storagePath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "kiriyamalauncher",
-                "zerotier");
-
-            // moon 是自己搭的根节点：只有「自建控制器」模式才需要绕月，
-            // my.zerotier.com 模式用官方根节点就够了。
-            bool isSelfHosted = string.Equals(
-                _snapshot.Preferences.ZeroTierConnectionMode,
-                ZeroTierSettings.SelfHostedController,
-                StringComparison.OrdinalIgnoreCase);
-
-            // 把连接模式告诉后端：客户端引擎在官方模式下会自动把 planet 校准为官方根
-            // 服务器文件（首装后 planet 可能是自建污染文件，导致官方控制台看不到入网请求）。
-            _zeroTier.ConnectionMode = isSelfHosted
-                ? ZeroTierSettings.SelfHostedController
-                : ZeroTierSettings.OfficialController;
-
-            ZeroTierStatus status = await _zeroTier.StartAsync(storagePath);
-
-            // 启动失败（客户端未装 / 服务装不上、起不来 / 节点探测失败）直接终止，不再往下加入网络。
-            if (!status.IsStarted)
-            {
-                string reason = status.Error is not null ? status.Error.ToDisplayText() : status.StatusText;
-                _logger.LogWarning("ZeroTier 节点启动失败：{Reason}", status.Error?.ToLogText() ?? status.StatusText);
-                StatusText = $"ZeroTier 启动失败：{reason}";
-                _appNotifier.Error("ZeroTier 启动失败", reason);
-                return;
-            }
-
-            _logger.LogInformation("ZeroTier 节点已启动：{NodeId}", status.NodeId);
-            _appNotifier.Info(
-                "ZeroTier 节点已启动",
-                string.IsNullOrWhiteSpace(status.NodeId) ? "节点 ID 获取中……" : $"节点 ID：{status.NodeId}");
-
-            if (isSelfHosted)
-            {
-                string moonIdText = string.IsNullOrWhiteSpace(_snapshot.Preferences.MoonServerIp)
-                    ? ZeroTierSettings.DefaultMoonId
-                    : _snapshot.Preferences.MoonServerIp.Trim();
-
-                if (ulong.TryParse(moonIdText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong moonId))
-                {
-                    StatusText = $"正在围绕 moon {moonIdText} 建立轨道……";
-                    await _zeroTier.OrbitMoonAsync(moonId);
-                }
-                else
-                {
-                    _appNotifier.Warning("Moon 设置有误", $"「{moonIdText}」不是合法的 moon 节点 ID，已跳过绕月。");
-                }
-            }
-
-            string networkIdText = ResolveNetworkId();
-
-            // 自建控制器模式下没填自建网络 ID：终止并提示（不能回退到官方网络）。
-            if (string.IsNullOrWhiteSpace(networkIdText))
-            {
-                StatusText = "请先到设置里填写「自建控制器网络 ID」。";
-                _appNotifier.Warning("缺少自建控制器网络 ID", "自建控制器模式下，请先到设置里填写你的控制器生成的 16 位网络 ID。");
-                return;
-            }
-
-            StatusText = $"正在加入网络 {networkIdText}……";
-            ulong networkId = ulong.Parse(networkIdText, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            ZeroTierStatus joined = await _zeroTier.JoinNetworkAsync(networkId);
-            _logger.LogInformation(
-                "加入网络 {NetworkId:x} 结果：ready = {Ready}，虚拟 IP = {VirtualIp}，状态 = {StatusText}",
-                networkId, joined.IsTransportReady, joined.VirtualIp, joined.StatusText);
-
-            _connectedNetworkId = networkId;
-            IsConnected = joined.IsTransportReady;
-            VirtualIp = joined.IsTransportReady ? joined.VirtualIp : string.Empty;
-
-            // 接入虚拟局域网后：
-            // - 客户端引擎（真虚拟网卡）：游戏进程直接通过系统网卡互通，无需注入组件；
-            // - Sockets 引擎（libzt 内嵌）：需要开启常驻自动注入，让游戏进程出现就注入 Hook。
-            if (joined.IsTransportReady)
-            {
-                if (!IsClientBackend)
-                {
-                    _launchService.StartAutoInject();
-
-                    // 隧道是 Hook ↔ 启动器之间的管道：自动开一下，免得用户忘了点
-                    // （忘了开的话，游戏里的广播只能被丢弃）。
-                    LanDevices.TryAutoStartTunnel();
-                }
-            }
-
-            StatusText = joined.IsTransportReady
-                ? $"已接入虚拟局域网，虚拟 IP：{joined.VirtualIp}"
-                : $"网络状态：{joined.StatusText}";
-
-            if (joined.IsTransportReady)
-            {
-                _appNotifier.Success("已连接到虚拟局域网", $"虚拟 IP：{joined.VirtualIp}");
-
-                // 软断开的副作用：之前连过的网络还在（libzt 无法退网），换过 Network ID 就会同时挂在多个网络里。
-                ulong[] otherNetworks = _zeroTier.JoinedNetworkIds.Where(id => id != networkId).ToArray();
-                if (otherNetworks.Length > 0)
-                {
-                    string others = string.Join('、', otherNetworks.Select(id => id.ToString("x16")));
-                    _appNotifier.Warning("仍停留在旧网络", $"libzt 无法退网，节点还连着：{others}。要彻底离开请重启应用。");
-                }
-            }
-            else
-            {
-                string hint = isSelfHosted
-                    ? "自建控制器模式下，请确认控制器已经启动并授权了这个节点。"
-                    : "请到 my.zerotier.com 打开这个网络，把本机节点（见上一条通知里的节点 ID）勾选 Auth。";
-
-                string reason = joined.Error is not null ? joined.Error.ToDisplayText() : joined.StatusText;
-                _appNotifier.Warning("网络尚未就绪", $"{reason}\n{hint}");
-            }
+            bool networkReady = await ConnectZeroTierAsync(allowOfficialFallback: true);
+            IsConnected = networkReady;
         }
         catch (Exception ex)
         {
@@ -500,14 +577,15 @@ public partial class GameSessionViewModel : PageViewModel
 
     /// <summary>
     /// 取当前连接模式对应的网络 ID：
-    ///   - 自建控制器模式：用「自建控制器网络 ID」（没填返回空串，由调用方提示）；
+    ///   - 自建控制器模式 / 中继服务器模式：都用「自建控制器网络 ID」（没填返回空串，由调用方提示）；
     ///   - 官方模式：用「ZeroTier 网络 ID」，没填或无效回退到官方默认网络。
     /// </summary>
     private string ResolveNetworkId()
     {
         string mode = _snapshot.Preferences.ZeroTierConnectionMode;
 
-        if (string.Equals(mode, ZeroTierSettings.SelfHostedController, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(mode, ZeroTierSettings.SelfHostedController, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, ZeroTierSettings.RelayServer, StringComparison.OrdinalIgnoreCase))
         {
             string selfHosted = (_snapshot.Preferences.SelfHostedNetworkId ?? string.Empty).Trim();
             return ZeroTierSettings.IsValidNetworkId(selfHosted) ? selfHosted : string.Empty;
@@ -556,7 +634,40 @@ public partial class GameSessionViewModel : PageViewModel
             OnPropertyChanged(nameof(ShowInjection));
             OnPropertyChanged(nameof(IsRelayServer));
             LanDevices.IsTunnelEnabled = !IsClientBackend;
+
+            // 退出登录后，需要鉴权的联机/房间状态都失效：断开连接并回到游戏列表。
+            if (!_snapshot.User.IsSignedIn)
+            {
+                _ = ResetAfterSignOutAsync();
+            }
         });
+
+    /// <summary>退出登录后重置联机页面：断开连接、清房间状态、回到游戏列表。</summary>
+    private async Task ResetAfterSignOutAsync()
+    {
+        try
+        {
+            if (IsConnected || Rooms.IsConnected || Rooms.IsInRoom)
+            {
+                await DisconnectAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "退出登录后重置联机页面失败。");
+        }
+        finally
+        {
+            Rooms.Disconnect();
+            IsInGameBoard = false;
+            SelectedGame = null;
+            StatusText = IDLE_BOARD_TEXT;
+            ActivePageContent = new GameListPageViewModel(this);
+            _launchService.StopMonitoring();
+            Integration = null;
+            LanDevices.StopDiscovery();
+        }
+    }
 
     /// <summary>ZeroTier 事件回调来自原生线程，转回 UI 线程再更新界面。</summary>
     private void OnZeroTierEventRaised(object? sender, string message)

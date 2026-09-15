@@ -251,7 +251,7 @@ public class AppSnapshot : IAppSnapshot
             RelayTokenSet tokens = await _relay.ExchangeCodeAsync(
                 baseUrl, authorizationCode.Code, codeVerifier, CLIENT_ID);
 
-            ApplySignedIn(email.Trim(), tokens);
+            ApplySignedIn(email.Trim(), authorizationCode.DisplayName, tokens);
         }
         catch (RelayServerException)
         {
@@ -288,7 +288,7 @@ public class AppSnapshot : IAppSnapshot
             RelayTokenSet tokens = await _relay.ExchangeCodeAsync(
                 baseUrl, authorizationCode.Code, codeVerifier, CLIENT_ID);
 
-            ApplySignedIn(normalizedEmail, tokens);
+            ApplySignedIn(normalizedEmail, normalizedDisplayName, tokens);
         }
         catch (RelayServerException)
         {
@@ -301,9 +301,10 @@ public class AppSnapshot : IAppSnapshot
     }
 
     /// <summary>登录 / 注册成功后，把账号信息与令牌写进快照并落库。</summary>
-    private void ApplySignedIn(string email, RelayTokenSet tokens)
+    private void ApplySignedIn(string email, string displayName, RelayTokenSet tokens)
     {
-        User.Nickname = string.IsNullOrWhiteSpace(User.Nickname) ? email : User.Nickname;
+        // 昵称用服务端返回的显示名（名称），绝不回退到邮箱 —— 界面顶端与房主卡片都只显示名称。
+        User.Nickname = string.IsNullOrWhiteSpace(displayName) ? email : displayName.Trim();
         User.LoginName = email;
         User.Email = email;
         User.AccessToken = tokens.AccessToken;

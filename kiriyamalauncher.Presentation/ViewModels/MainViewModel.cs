@@ -123,6 +123,10 @@ public partial class MainViewModel : BaseViewModel
 
         await _snapshot.SignOutAsync();
 
+        // 退出登录后，需要鉴权的页面（游戏联机/房间大厅/房间内）都已失效，
+        // 把活动页切回首页，避免用户停留在失效状态。
+        ActivePage = Pages[0];
+
         _notifier.Info("已退出登录", $"你已成功退出账户{nickname}");
     }
 }

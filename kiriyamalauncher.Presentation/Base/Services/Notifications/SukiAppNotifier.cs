@@ -37,4 +37,37 @@ public class SukiAppNotifier : IAppNotifier
             .Dismiss().ByClicking()
             .Queue();
     }
+
+    public IDisposable ShowLoading(string title, string? content = null)
+    {
+        ISukiToast toast = _toastManager.CreateToast()
+            .WithTitle(title)
+            .WithContent(content ?? string.Empty)
+            .WithLoadingState(true)
+            .Dismiss().ByClicking()
+            .Queue();
+
+        return new LoadingToastHandle(_toastManager, toast);
+    }
+
+    /// <summary>loading toast 的句柄：<see cref="Dispose"/> 时关闭对应的 toast。</summary>
+    private sealed class LoadingToastHandle : IDisposable
+    {
+        private readonly ISukiToastManager _manager;
+        private readonly ISukiToast _toast;
+
+        public LoadingToastHandle(ISukiToastManager manager, ISukiToast toast)
+        {
+            _manager = manager;
+            _toast = toast;
+        }
+
+        public void Dispose()
+        {
+            if (!_manager.IsDismissed(_toast))
+            {
+                _manager.Dismiss(_toast);
+            }
+        }
+    }
 }

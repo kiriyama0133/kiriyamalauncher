@@ -25,6 +25,7 @@ public partial class RoomsViewModel : ObservableObject
     private readonly ISukiDialogManager _dialogManager;
     private readonly IZeroTierService _zeroTier;
     private readonly ILogger<RoomsViewModel> _logger;
+    private readonly ILogger<RoomPageViewModel> _roomLogger;
 
     private IReadOnlyList<RelayRoom> _allRooms = [];
 
@@ -51,13 +52,21 @@ public partial class RoomsViewModel : ObservableObject
     [ObservableProperty]
     private RoomRowViewModel? _selectedRoom;
 
+    /// <summary>当前所在的房间页面；为 null 表示在房间大厅。</summary>
+    [ObservableProperty]
+    private RoomPageViewModel? _currentRoom;
+
+    /// <summary>是否已经进入某个房间（房间内页面）。</summary>
+    public bool IsInRoom => CurrentRoom is not null;
+
     public RoomsViewModel(
         IRelayServerClient relay,
         IAppSnapshot snapshot,
         IAppNotifier notifier,
         ISukiDialogManager dialogManager,
         IZeroTierService zeroTier,
-        ILogger<RoomsViewModel> logger)
+        ILogger<RoomsViewModel> logger,
+        ILogger<RoomPageViewModel> roomLogger)
     {
         _relay = relay;
         _snapshot = snapshot;
@@ -65,6 +74,7 @@ public partial class RoomsViewModel : ObservableObject
         _dialogManager = dialogManager;
         _zeroTier = zeroTier;
         _logger = logger;
+        _roomLogger = roomLogger;
     }
 
     /// <summary>是否有房间。</summary>
@@ -81,6 +91,8 @@ public partial class RoomsViewModel : ObservableObject
         ApplyFilter();
         OnPropertyChanged(nameof(IsSearching));
     }
+
+    partial void OnCurrentRoomChanged(RoomPageViewModel? value) => OnPropertyChanged(nameof(IsInRoom));
 
     /// <summary>连接中继服务器并拉取房间列表。</summary>
     public Task ConnectAsync() => LoadRoomsAsync();
@@ -153,6 +165,13 @@ public partial class RoomsViewModel : ObservableObject
     /// <summary>断开中继服务器：清空房间列表与状态（应用层断开，不涉及真实连接）。</summary>
     public void Disconnect()
     {
+        // 如果还在房间内，先停轮询并清掉房间页面状态。
+        if (CurrentRoom is not null)
+        {
+            CurrentRoom.StopPolling();
+            CurrentRoom = null;
+        }
+
         _allRooms = [];
         SearchText = string.Empty;
         ApplyFilter();
@@ -219,7 +238,7 @@ public partial class RoomsViewModel : ObservableObject
             StatusText = "尚未接入 ZeroTier 网络，无法进入房间。";
             _notifier.Warning(
                 "尚未接入 ZeroTier 网络",
-                "进入房间前，请先连接到中继服务器的 ZeroTier 网络（需要拿到节点 ID 与虚拟 IP）。\n\n提示：在设置里选择「自建控制器」模式并填入服务器网络 ID，然后连接虚拟局域网。");
+                "进入房间前，请先点击右上角「连接到虚拟局域网」接入中继服务器的 ZeroTier 网络（需要拿到节点 ID 与虚拟 IP，服务端才能给本机打房间 Tag）。");
             return;
         }
 
@@ -268,15 +287,15 @@ public partial class RoomsViewModel : ObservableObject
                     StatusText = "尚未接入 ZeroTier 网络，无法进入房间。";
                     _notifier.Warning(
                         "尚未接入 ZeroTier 网络",
-                        "进入房间前，请先连接到中继服务器的 ZeroTier 网络（需要拿到节点 ID 与虚拟 IP）。\n\n提示：在设置里选择「自建控制器」模式并填入服务器网络 ID，然后连接虚拟局域网。");
+                        "进入房间前，请先点击右上角「连接到虚拟局域网」接入中继服务器的 ZeroTier 网络（需要拿到节点 ID 与虚拟 IP，服务端才能给本机打房间 Tag）。");
                     return;
                 }
             }
 
             await _relay.JoinRoomAsync(baseUrl, roomId, HostName, nodeId, virtualIp, password);
             IsConnected = true;
-            StatusText = $"已进入房间「{roomName}」（虚拟 IP：{virtualIp}）。";
-            _notifier.Success("已进入房间", $"欢迎来到「{roomName}」，虚拟 IP：{virtualIp}。");
+
+            EnterRoom(roomId, roomName, HostName, nodeId);
         }
         catch (RelayServerException ex)
         {
@@ -293,6 +312,65 @@ public partial class RoomsViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>进入房间页面：创建 RoomPageViewModel 并启动成员轮询。</summary>
+    private void EnterRoom(string roomId, string roomName, string hostName, string nodeId)
+    {
+        CurrentRoom = new RoomPageViewModel(
+            roomId,
+            roomName,
+            hostName,
+            nodeId,
+            _relay,
+            _zeroTier,
+            _notifier,
+            _roomLogger,
+            LeaveCurrentRoomAsync,
+            ResolveBaseUrl);
+
+        StatusText = $"已进入房间「{roomName}」。";
+        _notifier.Success("已进入房间", $"欢迎来到「{roomName}」。");
+
+        CurrentRoom.StartPolling();
+    }
+
+    /// <summary>离开当前房间：上报服务端清除 Tag，停止轮询，回到大厅。</summary>
+    private async Task LeaveCurrentRoomAsync()
+    {
+        RoomPageViewModel? room = CurrentRoom;
+        if (room is null)
+        {
+            return;
+        }
+
+        string baseUrl = ResolveBaseUrl();
+
+        // 先停轮询，避免离开过程中还在探测。
+        room.StopPolling();
+
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            try
+            {
+                await _relay.LeaveRoomAsync(baseUrl, room.RoomId, room.NodeId);
+            }
+            catch (RelayServerException ex)
+            {
+                _notifier.Warning("离开房间时出错", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "离开房间「{Room}」失败。", room.RoomName);
+            }
+        }
+
+        CurrentRoom = null;
+        StatusText = "已离开房间，回到房间大厅。";
+        _notifier.Info("已离开房间", $"你已退出「{room.RoomName}」。");
+
+        // 回到大厅后刷新房间列表（成员数可能已变化）。
+        await LoadRoomsAsync();
     }
 
     /// <summary>拉取房间列表（供连接 / 刷新 / 创建后 / 加入后复用）。</summary>
@@ -400,6 +478,9 @@ public partial class RoomRowViewModel : ObservableObject
     public string PlayerCountText => Room.PlayerCountText;
 
     public bool HasPassword => Room.HasPassword;
+
+    /// <summary>给界面看的密码状态文本（「有密码」/「无密码」）。</summary>
+    public string PasswordText => Room.HasPassword ? "有密码" : "无密码";
 
     /// <summary>房间是否已满。</summary>
     public bool IsFull => Room.MaxPlayers > 0 && Room.PlayerCount >= Room.MaxPlayers;

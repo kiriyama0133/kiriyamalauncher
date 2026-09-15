@@ -6,32 +6,41 @@
              x:Class="kiriyamalauncher.Presentation.Views.RoomsView"
              x:DataType="vm:RoomsViewModel"
 			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
+			 xmlns:views="clr-namespace:kiriyamalauncher.Presentation.Views"
 			 xmlns:i="using:Material.Icons.Avalonia"
 			 xmlns:suki="clr-namespace:SukiUI.Controls;assembly=SukiUI"
 			 xmlns:theme="clr-namespace:SukiUI.Theme;assembly=SukiUI">
 
 	<UserControl.Styles>
-		<!-- 房间列表项：整行手型指针，悬停高亮边线。 -->
-		<Style Selector="Button.roomRow">
-			<Setter Property="Cursor" Value="Hand" />
-			<Setter Property="HorizontalContentAlignment" Value="Stretch" />
-			<Setter Property="Padding" Value="14,12" />
-			<Setter Property="Margin" Value="0,0,0,10" />
-			<Setter Property="CornerRadius" Value="12" />
-			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+		<!-- 房间卡片：与其他玻璃卡片统一（CornerRadius 14 / Padding 18 / 拉伸）。 -->
+		<Style Selector="suki|GlassCard.roomCard">
+			<Setter Property="CornerRadius" Value="14" />
+			<Setter Property="Padding" Value="18" />
+			<Setter Property="HorizontalAlignment" Value="Stretch" />
+			<Setter Property="Margin" Value="0,0,0,12" />
 		</Style>
 
+		<!-- 房间标题：名称，半粗体。 -->
 		<Style Selector="TextBlock.roomTitle">
 			<Setter Property="FontWeight" Value="DemiBold" />
+			<Setter Property="FontSize" Value="{DynamicResource AppFontSizeSubtitle}" />
 		</Style>
 
+		<!-- 卡片元信息：房主 / 密码 / 人数等次要文本。 -->
 		<Style Selector="TextBlock.roomMeta">
 			<Setter Property="Foreground" Value="{DynamicResource SukiLowText}" />
 			<Setter Property="FontSize" Value="{DynamicResource AppFontSizeSmall}" />
+			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
 	</UserControl.Styles>
 
 	<StackPanel Spacing="14">
+
+		<!-- 房间内页面：加入/创建房间后显示（ContentControl 由 ViewLocator 按命名约定解析 RoomView）。 -->
+		<ContentControl Content="{Binding CurrentRoom}" IsVisible="{Binding IsInRoom}" />
+
+		<!-- 房间大厅：未进房间时显示。 -->
+		<StackPanel Spacing="14" IsVisible="{Binding !IsInRoom}">
 
 		<!-- 头部：标题 + 在线房间数 + 操作按钮。 -->
 		<Grid ColumnDefinitions="*,Auto">
@@ -76,42 +85,60 @@
 				   HorizontalAlignment="Center" Opacity="0.6" Margin="0,20"
 				   IsVisible="{Binding !HasRooms}" />
 
-		<!-- 房间列表。 -->
+		<!-- 房间列表：每张卡片都是标准的玻璃卡片。 -->
 		<ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto">
 			<ItemsControl ItemsSource="{Binding Rooms}">
 				<ItemsControl.ItemTemplate>
 					<DataTemplate DataType="{x:Type vm:RoomRowViewModel}">
-						<Button Classes="Basic NoPressedAnimation roomRow"
-								Command="{Binding JoinCommand}"
-								IsEnabled="{Binding !IsFull}"
-								ToolTip.Tip="{Binding IsFull, StringFormat='房间已满（{0}）'}">
-							<Grid ColumnDefinitions="*,Auto,Auto">
-								<StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-									<StackPanel Orientation="Horizontal" Spacing="6">
+						<suki:GlassCard Classes="roomCard">
+							<Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+
+								<!-- 标题行：房间名 + 人数。 -->
+								<Grid Grid.Column="0" Grid.Row="0" ColumnDefinitions="*,Auto">
+									<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
 										<TextBlock Classes="roomTitle" Text="{Binding Name}" />
 										<i:MaterialIcon Kind="Lock" Width="13" Height="13" VerticalAlignment="Center"
 														Foreground="{DynamicResource SukiLowText}"
 														IsVisible="{Binding HasPassword}" />
 									</StackPanel>
-									<TextBlock Classes="roomMeta" Text="{Binding HostName, StringFormat='房主：{0}'}" />
-								</StackPanel>
+									<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
+										<i:MaterialIcon Kind="AccountMultiple" Width="14" Height="14" VerticalAlignment="Center"
+														Foreground="{DynamicResource SukiPrimaryColor}" />
+										<TextBlock Classes="roomMeta" Text="{Binding PlayerCountText}" VerticalAlignment="Center" />
+									</StackPanel>
+								</Grid>
 
-								<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="12,0">
-									<i:MaterialIcon Kind="AccountMultiple" Width="14" Height="14" VerticalAlignment="Center"
-													Foreground="{DynamicResource SukiLowText}" />
-									<TextBlock Classes="roomMeta" Text="{Binding PlayerCountText}" VerticalAlignment="Center" />
-								</StackPanel>
+								<!-- 信息行：房主 + 是否有密码 + 加入按钮。 -->
+								<Grid Grid.Column="0" Grid.Row="1" ColumnDefinitions="Auto,Auto,*"
+									  Margin="0,10,0,0">
+									<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5">
+										<i:MaterialIcon Kind="Account" Width="13" Height="13" VerticalAlignment="Center"
+														Foreground="{DynamicResource SukiLowText}" />
+										<TextBlock Classes="roomMeta" Text="{Binding HostName, StringFormat='房主：{0}'}" />
+									</StackPanel>
+									<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="18,0,0,0">
+										<i:MaterialIcon Kind="Lock" Width="13" Height="13" VerticalAlignment="Center"
+														Foreground="{DynamicResource SukiLowText}" />
+										<TextBlock Classes="roomMeta" Text="{Binding PasswordText}" />
+									</StackPanel>
+								</Grid>
 
-								<Button Grid.Column="2" Classes="Flat" Content="加入"
+								<!-- 加入按钮：右侧垂直居中，跨两行。 -->
+								<Button Grid.Column="1" Grid.Row="0" Grid.RowSpan="2" Classes="Flat"
+										Content="加入"
+										Cursor="Hand"
 										Command="{Binding JoinCommand}"
 										IsEnabled="{Binding !IsFull}"
-										VerticalAlignment="Center" />
+										ToolTip.Tip="{Binding IsFull, StringFormat='房间已满（{0}）'}"
+										VerticalAlignment="Center" Margin="16,0,0,0" />
 							</Grid>
-						</Button>
+						</suki:GlassCard>
 					</DataTemplate>
 				</ItemsControl.ItemTemplate>
 			</ItemsControl>
 		</ScrollViewer>
+
+		</StackPanel>
 
 	</StackPanel>
 </UserControl>

@@ -44,6 +44,16 @@ public interface IRelayServerClient
     /// </summary>
     Task JoinRoomAsync(string baseUrl, string roomId, string nickname, string nodeId, string virtualIp, string? password, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 离开房间；服务端清除该节点的房间 Tag。房间不存在（404）会抛 <see cref="RelayServerException"/>。
+    /// </summary>
+    Task LeaveRoomAsync(string baseUrl, string roomId, string nodeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 列出房间内的玩家（供房间页面展示成员并做延迟探测）。房间不存在（404）会抛 <see cref="RelayServerException"/>。
+    /// </summary>
+    Task<RelayRoomPlayers> ListPlayersAsync(string baseUrl, string roomId, CancellationToken cancellationToken = default);
+
     /// <summary>注册新账户；邮箱已被占用会抛 <see cref="RelayServerException"/>。</summary>
     Task<RelayRegisteredAccount> RegisterAsync(string baseUrl, string email, string password, string? displayName, CancellationToken cancellationToken = default);
 
