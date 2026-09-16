@@ -334,6 +334,13 @@ public class ZeroTierService : IZeroTierBackend, IDisposable
     /// <inheritdoc />
     public Task CleanupOnExitAsync() => Task.CompletedTask;
 
+    /// <inheritdoc />
+    public Task RaiseVirtualInterfacePriorityAsync(CancellationToken cancellationToken = default)
+    {
+        // libzt 是用户态实现，没有系统虚拟网卡，无需（也无法）设置网卡优先级。
+        return Task.CompletedTask;
+    }
+
     public void Stop()
     {
         StopPingResponder();

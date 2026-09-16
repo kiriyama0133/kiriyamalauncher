@@ -99,6 +99,17 @@ public interface IZeroTierService
     /// <summary>读取当前状态（不改变任何东西）。</summary>
     ZeroTierStatus GetStatus(ulong networkId);
 
+    /// <summary>
+    /// 提高 ZeroTier 虚拟网卡的接口优先级（metric），让游戏流量优先走隧道。
+    ///
+    /// 只有「客户端引擎」（驱动系统真实 ZeroTier One 虚拟网卡）才有意义：
+    ///   - Windows：Set-NetIPInterface -InterfaceMetric 1（把虚拟网卡 metric 提到最高优先级）；
+    ///   - Linux：ip link set dev &lt;iface&gt; metric 1（或 nmcli，取决于发行版）。
+    /// libzt 内嵌节点（Sockets 引擎）是用户态实现、没有系统虚拟网卡，此方法为空操作。
+    /// 调用方应在 JoinNetworkAsync 成功（拿到虚拟 IP）之后调用。
+    /// </summary>
+    Task RaiseVirtualInterfacePriorityAsync(CancellationToken cancellationToken = default);
+
     /// <summary>停止并释放节点（只在应用退出时调用；之后本进程内不能再次启动节点）。</summary>
     void Stop();
 }

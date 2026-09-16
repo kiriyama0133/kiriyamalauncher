@@ -100,6 +100,7 @@ public class ZeroTierClientBackend : IZeroTierBackend
     private static readonly TimeSpan SERVICE_START_TIMEOUT = TimeSpan.FromSeconds(30);
 
     private readonly ILogger<ZeroTierClientBackend> _logger;
+    private readonly IRouteMetricService _routeMetric;
     private readonly SemaphoreSlim _commandLock = new(1, 1);
 
     /// <summary>
@@ -134,9 +135,10 @@ public class ZeroTierClientBackend : IZeroTierBackend
     /// <summary>上次自愈时间（UTC，用于冷却）。</summary>
     private DateTime _lastHealAtUtc = DateTime.MinValue;
 
-    public ZeroTierClientBackend(ILogger<ZeroTierClientBackend> logger)
+    public ZeroTierClientBackend(ILogger<ZeroTierClientBackend> logger, IRouteMetricService routeMetric)
     {
         _logger = logger;
+        _routeMetric = routeMetric;
     }
 
     /// <inheritdoc />
@@ -994,6 +996,9 @@ public class ZeroTierClientBackend : IZeroTierBackend
             if (status.IsTransportReady)
             {
                 EventRaised?.Invoke(this, $"已通过虚拟网卡加入网络，虚拟 IP：{status.VirtualIp}");
+
+                // 拿到虚拟 IP 后提高虚拟网卡优先级，让游戏流量优先走 ZeroTier 隧道。
+                await RaiseVirtualInterfacePriorityAsync(cancellationToken).ConfigureAwait(false);
             }
 
             return status;
@@ -1007,6 +1012,39 @@ public class ZeroTierClientBackend : IZeroTierBackend
     /// <inheritdoc />
     public Task<ZeroTierStatus> DisconnectAsync(ulong networkId, CancellationToken cancellationToken = default)
         => LeaveNetworkAsync(networkId, cancellationToken);
+
+    /// <summary>
+    /// <summary>
+    /// 提高 ZeroTier One 虚拟网卡的接口优先级（metric），让游戏流量优先走隧道。
+    /// 委托给跨平台 <see cref="IRouteMetricService"/>（按平台自动发现网卡并调整 metric）。
+    /// 失败只记日志、不抛异常——网卡优先级是优化项，不能反过来阻断联机。
+    /// </summary>
+    public async Task RaiseVirtualInterfacePriorityAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            RouteMetricResult result = await _routeMetric.RaiseZeroTierMetricAsync(_currentNetworkId, 1, cancellationToken).ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("ZeroTier 网卡优先级已调整：{Message}", result.Message);
+                EventRaised?.Invoke(this, result.Message);
+            }
+            else
+            {
+                _logger.LogWarning("调整 ZeroTier 网卡优先级未成功（不影响联机）：{Message}", result.Message);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // 优化项失败不能阻断联机，只记录。
+            _logger.LogWarning(ex, "提高 ZeroTier 虚拟网卡优先级失败（不影响联机，可手动设置 metric）。");
+        }
+    }
 
     /// <inheritdoc />
     public ZeroTierStatus GetStatus(ulong networkId)

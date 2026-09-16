@@ -83,6 +83,9 @@ public class ZeroTierBackendFactory : IZeroTierService, IDisposable
     public ZeroTierStatus GetStatus(ulong networkId)
         => Current.GetStatus(networkId);
 
+    public Task RaiseVirtualInterfacePriorityAsync(CancellationToken cancellationToken = default)
+        => Current.RaiseVirtualInterfacePriorityAsync(cancellationToken);
+
     public void Stop()
         => Current.Stop();
 

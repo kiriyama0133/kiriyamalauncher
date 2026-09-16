@@ -42,7 +42,8 @@ public static class DependencyInjection
             // 工厂按用户偏好的传输引擎挑一个。
             .AddSingleton<IZeroTierBackend, ZeroTierService>()
             .AddSingleton<IZeroTierBackend, ZeroTierClientBackend>()
-            .AddSingleton<IFirewallService>(CreateFirewallService);
+            .AddSingleton<IFirewallService>(CreateFirewallService)
+            .AddSingleton<IRouteMetricService>(CreateRouteMetricService);
 
         // 中继服务器的 HTTP 客户端：连接池里的连接最长活 30 秒——服务器重启或
         // ZeroTier 通路重建后复用旧连接，会被「远程主机强迫关闭」（10054）。
@@ -64,6 +65,30 @@ public static class DependencyInjection
         => OperatingSystem.IsWindows()
             ? new WindowsFirewallService(serviceProvider.GetRequiredService<ILogger<WindowsFirewallService>>())
             : new UnsupportedFirewallService();
+
+    /// <summary>
+    /// 网卡优先级（metric）实现按平台选择：Windows 用 PowerShell/netsh，
+    /// Linux 用 ip link，macOS 用 ifconfig，其它平台返回手动提示。
+    /// </summary>
+    private static IRouteMetricService CreateRouteMetricService(IServiceProvider serviceProvider)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return new WindowsRouteMetricService(serviceProvider.GetRequiredService<ILogger<WindowsRouteMetricService>>());
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return new LinuxRouteMetricService(serviceProvider.GetRequiredService<ILogger<LinuxRouteMetricService>>());
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return new MacRouteMetricService(serviceProvider.GetRequiredService<ILogger<MacRouteMetricService>>());
+        }
+
+        return new UnsupportedRouteMetricService();
+    }
 
     private static IServiceCollection AddDatabaseAccess(this IServiceCollection services)
     {

@@ -205,7 +205,7 @@ public partial class RoomsViewModel : ObservableObject
                 "civ6",
                 HostName,
                 _notifier,
-                (room, password) => _ = JoinAsync(room.Id, room.Name, password)))
+                (room, password) => _ = JoinAsync(room.Id, room.Name, room.HostName, password)))
             .Dismiss().ByClickingBackground()
             .TryShow();
     }
@@ -244,7 +244,7 @@ public partial class RoomsViewModel : ObservableObject
 
         if (!room.HasPassword)
         {
-            _ = JoinAsync(room.Id, room.Name, null, nodeId, virtualIp);
+            _ = JoinAsync(room.Id, room.Name, room.HostName, null, nodeId, virtualIp);
             return;
         }
 
@@ -258,12 +258,12 @@ public partial class RoomsViewModel : ObservableObject
                 virtualIp,
                 _notifier,
                 room,
-                () => _ = LoadRoomsAsync()))
+                () => _ = EnterRoomAsync(room.Id, room.Name, room.HostName, nodeId)))
             .Dismiss().ByClickingBackground()
             .TryShow();
     }
 
-    private async Task JoinAsync(string roomId, string roomName, string? password, string? nodeId = null, string? virtualIp = null)
+    private async Task JoinAsync(string roomId, string roomName, string hostName, string? password, string? nodeId = null, string? virtualIp = null)
     {
         IsBusy = true;
         StatusText = $"正在加入房间「{roomName}」……";
@@ -295,7 +295,7 @@ public partial class RoomsViewModel : ObservableObject
             await _relay.JoinRoomAsync(baseUrl, roomId, HostName, nodeId, virtualIp, password);
             IsConnected = true;
 
-            EnterRoom(roomId, roomName, HostName, nodeId);
+            await EnterRoomAsync(roomId, roomName, hostName, nodeId);
         }
         catch (RelayServerException ex)
         {
@@ -314,8 +314,12 @@ public partial class RoomsViewModel : ObservableObject
         }
     }
 
-    /// <summary>进入房间页面：创建 RoomPageViewModel 并启动成员轮询。</summary>
-    private void EnterRoom(string roomId, string roomName, string hostName, string nodeId)
+    /// <summary>
+    /// 进入房间页面：创建 RoomPageViewModel 并启动成员轮询。
+    /// 无密码房间在 JoinAsync 里调用；有密码房间由 JoinRoomDialogViewModel 的
+    /// 成功回调调用（加入已在对话框里完成，这里只负责跳转房间页）。
+    /// </summary>
+    private Task EnterRoomAsync(string roomId, string roomName, string hostName, string nodeId)
     {
         CurrentRoom = new RoomPageViewModel(
             roomId,
@@ -333,6 +337,7 @@ public partial class RoomsViewModel : ObservableObject
         _notifier.Success("已进入房间", $"欢迎来到「{roomName}」。");
 
         CurrentRoom.StartPolling();
+        return Task.CompletedTask;
     }
 
     /// <summary>离开当前房间：上报服务端清除 Tag，停止轮询，回到大厅。</summary>
