@@ -5,7 +5,6 @@
         xmlns:sukiUi="clr-namespace:SukiUI.Controls;assembly=SukiUI"
         xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
         xmlns:i="using:Material.Icons.Avalonia"
-        xmlns:animations="clr-namespace:SukiUI.Animations;assembly=SukiUI"
         x:Class="kiriyamalauncher.Presentation.Views.MainWindow"
         x:DataType="vm:MainViewModel"
 		mc:Ignorable="d" d:DesignWidth="1366" d:DesignHeight="768"
@@ -24,32 +23,7 @@
 	</sukiUi:SukiWindow.Hosts>
 
 	<sukiUi:SukiWindow.Styles>
-		<!--
-			标题栏左侧的返回按钮：
-			默认只显示图标，指针悬停时展开出「返回」文字，并显示一圈边线。
-		-->
-		<Style Selector="Button.backButton">
-			<Setter Property="Cursor" Value="Hand" />
-			<Setter Property="Background" Value="Transparent" />
-			<Setter Property="BorderThickness" Value="1" />
-			<Setter Property="BorderBrush" Value="Transparent" />
-			<Setter Property="CornerRadius" Value="10" />
-			<Setter Property="Height" Value="25" />
-			<Setter Property="Padding" Value="6,0" />
-			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
-		</Style>
-
-		<Style Selector="Button.backButton:pointerover">
-			<Setter Property="Background" Value="Transparent" />
-			<Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor}" />
-			<Setter Property="RenderTransform" Value="none" />
-		</Style>
-
-		<Style Selector="Button.backButton:pressed, Button.backButton:pressed:pointerover">
-			<Setter Property="RenderTransform" Value="none" />
-		</Style>
-
-		<!-- 账号按钮（登录 / 昵称）：手型指针 + 悬停边线，和返回按钮一致。 -->
+		<!-- 账号按钮（登录 / 昵称）：手型指针 + 悬停边线。 -->
 		<Style Selector="Button.accountButton">
 			<Setter Property="Cursor" Value="Hand" />
 			<Setter Property="BorderThickness" Value="1" />
@@ -67,51 +41,15 @@
 		<Style Selector="Button.accountButton:pressed, Button.accountButton:pressed:pointerover">
 			<Setter Property="RenderTransform" Value="none" />
 		</Style>
-
-		<Style Selector="Button.backButton TextBlock.backLabel">
-			<Setter Property="Width" Value="0" />
-			<Setter Property="Opacity" Value="0" />
-			<Setter Property="ClipToBounds" Value="True" />
-			<Setter Property="Transitions">
-				<Transitions>
-					<DoubleTransition Property="Width" Duration="0:0:0.18" />
-					<DoubleTransition Property="Opacity" Duration="0:0:0.18" />
-				</Transitions>
-			</Setter>
-		</Style>
-
-		<Style Selector="Button.backButton:pointerover TextBlock.backLabel">
-			<Setter Property="Width" Value="34" />
-			<Setter Property="Opacity" Value="1" />
-		</Style>
 	</sukiUi:SukiWindow.Styles>
 
 	<sukiUi:SukiWindow.LogoContent>
-		<Panel>
-			<!-- 默认显示应用图标；进入游戏板块等「可返回」的页面时，换成返回按钮。 -->
-			<i:MaterialIcon Kind="LanConnect"
-							Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
-							Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
-							VerticalAlignment="Center"
-							Foreground="{DynamicResource SukiPrimaryColor}"
-							animations:VisibilityBehavior.IsVisible="{Binding !ActivePage.CanGoBack}"
-							animations:VisibilityBehavior.HiddenScale="0.8" />
-
-			<!-- 返回按钮：默认只有图标，悬停时展开「返回」文字并显示边线；显隐带缩放+淡入淡出动画。 -->
-			<Button Classes="Basic NoPressedAnimation backButton"
-					animations:VisibilityBehavior.IsVisible="{Binding ActivePage.CanGoBack}"
-					animations:VisibilityBehavior.HiddenScale="0.8"
-					Command="{Binding ActivePage.GoBackCommand}"
-					ToolTip.Tip="返回上一层">
-				<StackPanel Orientation="Horizontal" Spacing="0">
-							<TextBlock Classes="backLabel" Text="返回" FontSize="{DynamicResource AppFontSizeCompact}" VerticalAlignment="Center" />
-					<i:MaterialIcon Kind="ArrowLeft"
-								   Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
-								   Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
-								   VerticalAlignment="Center" />
-				</StackPanel>
-			</Button>
-		</Panel>
+		<!-- 标题栏左侧固定显示应用图标（返回按钮已移到游戏板块标题右侧）。 -->
+		<i:MaterialIcon Kind="LanConnect"
+						Width="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+						Height="{Binding $parent[sukiUi:SukiWindow].TitleBarControlSize}"
+						VerticalAlignment="Center"
+						Foreground="{DynamicResource SukiPrimaryColor}" />
 	</sukiUi:SukiWindow.LogoContent>
 
 	<sukiUi:SukiWindow.RightWindowTitleBarControls>

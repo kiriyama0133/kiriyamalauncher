@@ -44,6 +44,16 @@ public static class DependencyInjection
             .AddSingleton<IZeroTierBackend, ZeroTierClientBackend>()
             .AddSingleton<IFirewallService>(CreateFirewallService);
 
+        // 中继服务器的 HTTP 客户端：连接池里的连接最长活 30 秒——服务器重启或
+        // ZeroTier 通路重建后复用旧连接，会被「远程主机强迫关闭」（10054）。
+        // 给连接设限期，让失效连接及时作废，而不是被下一次请求复用。
+        services.AddHttpClient(HttpRelayServerClient.ClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromSeconds(30),
+                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15)
+            });
+
         return services;
     }
 

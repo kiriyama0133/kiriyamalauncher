@@ -40,6 +40,48 @@
 			<Setter Property="Padding" Value="18" />
 			<Setter Property="HorizontalAlignment" Value="Stretch" />
 		</Style>
+
+		<!--
+			返回按钮（游戏板块标题右侧）：
+			默认只显示图标，指针悬停时展开出「返回」文字，并显示一圈边线。
+		-->
+		<Style Selector="Button.backButton">
+			<Setter Property="Cursor" Value="Hand" />
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderThickness" Value="1" />
+			<Setter Property="BorderBrush" Value="Transparent" />
+			<Setter Property="CornerRadius" Value="10" />
+			<Setter Property="Height" Value="30" />
+			<Setter Property="Padding" Value="8,0" />
+			<Setter Property="Foreground" Value="{DynamicResource SukiText}" />
+		</Style>
+
+		<Style Selector="Button.backButton:pointerover">
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor}" />
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.backButton:pressed, Button.backButton:pressed:pointerover">
+			<Setter Property="RenderTransform" Value="none" />
+		</Style>
+
+		<Style Selector="Button.backButton TextBlock.backLabel">
+			<Setter Property="Width" Value="0" />
+			<Setter Property="Opacity" Value="0" />
+			<Setter Property="ClipToBounds" Value="True" />
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Width" Duration="0:0:0.18" />
+					<DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+				</Transitions>
+			</Setter>
+		</Style>
+
+		<Style Selector="Button.backButton:pointerover TextBlock.backLabel">
+			<Setter Property="Width" Value="34" />
+			<Setter Property="Opacity" Value="1" />
+		</Style>
 	</UserControl.Styles>
 
 	<!--
@@ -91,7 +133,20 @@
 					<Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
 
 						<StackPanel Grid.Column="0" Spacing="6">
-							<TextBlock Text="{Binding Game.Name}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="DemiBold" />
+							<StackPanel Orientation="Horizontal" Spacing="10">
+								<TextBlock Text="{Binding Game.Name}" FontSize="{DynamicResource AppFontSizeTitle}" FontWeight="DemiBold" VerticalAlignment="Center" />
+
+								<!-- 返回按钮：从标题栏左上角移到标题右侧，悬停展开「返回」文字。 -->
+								<Button Classes="Basic NoPressedAnimation backButton"
+										Command="{Binding Session.GoBackCommand}"
+										ToolTip.Tip="返回上一层"
+										VerticalAlignment="Center">
+									<StackPanel Orientation="Horizontal" Spacing="0">
+										<TextBlock Classes="backLabel" Text="返回" FontSize="{DynamicResource AppFontSizeCompact}" VerticalAlignment="Center" />
+										<i:MaterialIcon Kind="ArrowLeft" Width="16" Height="16" VerticalAlignment="Center" />
+									</StackPanel>
+								</Button>
+							</StackPanel>
 							<TextBlock Text="{Binding Session.StatusText}" Opacity="0.7" TextWrapping="Wrap" MaxWidth="560"
 									   HorizontalAlignment="Left" />
 						</StackPanel>

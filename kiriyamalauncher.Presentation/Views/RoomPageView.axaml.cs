@@ -2,9 +2,9 @@ using Avalonia.Controls;
 
 namespace kiriyamalauncher.Presentation.Views;
 
-public partial class RoomView : UserControl
+public partial class RoomPageView : UserControl
 {
-    public RoomView()
+    public RoomPageView()
     {
         InitializeComponent();
     }

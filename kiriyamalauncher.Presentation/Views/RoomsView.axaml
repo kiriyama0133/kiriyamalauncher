@@ -36,7 +36,7 @@
 
 	<StackPanel Spacing="14">
 
-		<!-- 房间内页面：加入/创建房间后显示（ContentControl 由 ViewLocator 按命名约定解析 RoomView）。 -->
+		<!-- 房间内页面：加入/创建房间后显示（ContentControl 由 ViewLocator 按命名约定解析 RoomPageView）。 -->
 		<ContentControl Content="{Binding CurrentRoom}" IsVisible="{Binding IsInRoom}" />
 
 		<!-- 房间大厅：未进房间时显示。 -->

@@ -43,7 +43,7 @@ public sealed partial class RoomPageViewModel : BaseViewModel
     /// <summary>本机节点 ID（离开房间时上报，服务端据此清除 Tag）。</summary>
     public string NodeId { get; }
 
-    /// <summary>房间内成员（只显示名称 + 延迟）。</summary>
+    /// <summary>房间内成员（显示昵称 + 虚拟 IP + 延迟）。</summary>
     public ObservableCollection<RoomPlayerRow> Players { get; } = [];
 
     /// <summary>状态说明。</summary>
@@ -204,12 +204,13 @@ public sealed partial class RoomPageViewModel : BaseViewModel
         }
     }
 
-    /// <summary>把一轮成员结果合并进列表：已知玩家原地更新，离开的移除。</summary>
+    /// <summary>把一轮成员结果合并进列表：已知玩家原地更新，离开的移除。
+    /// 同一节点（NodeId）的多条服务端记录会合并成一行，避免出现重复用户。</summary>
     private void ApplyPlayers(System.Collections.Generic.IReadOnlyList<RelayPlayer> players)
     {
         foreach (RelayPlayer player in players)
         {
-            RoomPlayerRow? row = FindPlayer(player.PlayerId);
+            RoomPlayerRow? row = FindPlayer(player.PlayerId) ?? FindByNodeId(player.NodeId);
 
             if (row is null)
             {
@@ -238,6 +239,25 @@ public sealed partial class RoomPageViewModel : BaseViewModel
         foreach (RoomPlayerRow row in Players)
         {
             if (row.PlayerId == playerId)
+            {
+                return row;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>按 ZeroTier 节点 ID 找已有行（服务端遗留的同一节点多条记录合并为一行）。</summary>
+    private RoomPlayerRow? FindByNodeId(string nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return null;
+        }
+
+        foreach (RoomPlayerRow row in Players)
+        {
+            if (string.Equals(row.NodeId, nodeId, StringComparison.OrdinalIgnoreCase))
             {
                 return row;
             }
@@ -277,15 +297,18 @@ public sealed partial class RoomPageViewModel : BaseViewModel
     }
 }
 
-/// <summary>房间内成员列表里的一行（只显示名称 + 延迟）。</summary>
+/// <summary>房间内成员列表里的一行（显示昵称 + 虚拟 IP + 延迟）。</summary>
 public sealed partial class RoomPlayerRow : ObservableObject
 {
     public Guid PlayerId { get; private set; }
 
-    /// <summary>成员名称（界面只显示这个）。</summary>
+    /// <summary>成员的 ZeroTier 节点 ID（同一节点的多条服务端记录在界面上合并为一行）。</summary>
+    public string NodeId { get; private set; } = string.Empty;
+
+    /// <summary>成员昵称。</summary>
     public string Name { get; private set; } = string.Empty;
 
-    /// <summary>成员虚拟 IP（延迟探测目标，不展示给用户）。</summary>
+    /// <summary>成员在 ZeroTier 虚拟网中的 IP（同时用作延迟探测目标）。</summary>
     public string VirtualIp { get; private set; } = string.Empty;
 
     /// <summary>延迟（毫秒）；null 表示探测失败/不可用。</summary>
@@ -305,6 +328,7 @@ public sealed partial class RoomPlayerRow : ObservableObject
     public void Update(RelayPlayer player)
     {
         PlayerId = player.PlayerId;
+        NodeId = player.NodeId;
         Name = string.IsNullOrWhiteSpace(player.Nickname) ? "未命名玩家" : player.Nickname;
         VirtualIp = player.VirtualIp;
 

@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,11 +15,20 @@ using System.Threading.Tasks;
 namespace kiriyamalauncher.Data;
 
 /// <summary>
-/// <see cref="IRelayServerClient"/> 的 HTTP 实现（用 <see cref="IHttpClientFactory"/> 的默认客户端）。
+/// <see cref="IRelayServerClient"/> 的 HTTP 实现（用 <see cref="IHttpClientFactory"/> 的专用命名客户端）。
 /// JSON 走 <see cref="RelayJsonContext"/> 源生成：NativeAOT 发布下反射序列化被禁用，不能再用反射序列化器。
 /// </summary>
 public class HttpRelayServerClient : IRelayServerClient
 {
+    /// <summary>中继服务器专用 HttpClient 的名字（连接池带限期，见 DI 注册）。</summary>
+    public const string ClientName = "RelayServer";
+
+    /// <summary>读接口遇瞬时网络错误时的最大尝试次数（含首次）。</summary>
+    private const int MAX_GET_ATTEMPTS = 3;
+
+    /// <summary>两次尝试之间的间隔。</summary>
+    private const int RETRY_DELAY_MS = 1000;
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<HttpRelayServerClient> _logger;
 
@@ -31,9 +42,7 @@ public class HttpRelayServerClient : IRelayServerClient
     public async Task<IReadOnlyList<RelayGame>> ListGamesAsync(string baseUrl, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
-        using HttpResponseMessage response = await client
-            .GetAsync($"{baseUrl}/api/games", cancellationToken)
-            .ConfigureAwait(false);
+        using HttpResponseMessage response = await GetWithRetryAsync(client, $"{baseUrl}/api/games", cancellationToken).ConfigureAwait(false);
 
         string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, json);
@@ -54,9 +63,7 @@ public class HttpRelayServerClient : IRelayServerClient
     public async Task<IReadOnlyList<RelayRoom>> ListRoomsAsync(string baseUrl, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
-        using HttpResponseMessage response = await client
-            .GetAsync($"{baseUrl}/api/rooms", cancellationToken)
-            .ConfigureAwait(false);
+        using HttpResponseMessage response = await GetWithRetryAsync(client, $"{baseUrl}/api/rooms", cancellationToken).ConfigureAwait(false);
 
         string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, json);
@@ -78,9 +85,7 @@ public class HttpRelayServerClient : IRelayServerClient
     {
         using HttpClient client = CreateClient();
         string url = $"{baseUrl}/api/rooms?game={Uri.EscapeDataString(gameKey)}";
-        using HttpResponseMessage response = await client
-            .GetAsync(url, cancellationToken)
-            .ConfigureAwait(false);
+        using HttpResponseMessage response = await GetWithRetryAsync(client, url, cancellationToken).ConfigureAwait(false);
 
         string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, json);
@@ -179,9 +184,8 @@ public class HttpRelayServerClient : IRelayServerClient
     public async Task<RelayRoomPlayers> ListPlayersAsync(string baseUrl, string roomId, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
-        using HttpResponseMessage response = await client
-            .GetAsync($"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/players", cancellationToken)
-            .ConfigureAwait(false);
+        using HttpResponseMessage response = await GetWithRetryAsync(
+            client, $"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/players", cancellationToken).ConfigureAwait(false);
 
         string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -347,10 +351,46 @@ public class HttpRelayServerClient : IRelayServerClient
 
     private HttpClient CreateClient()
     {
-        HttpClient client = _httpClientFactory.CreateClient();
+        HttpClient client = _httpClientFactory.CreateClient(ClientName);
         client.Timeout = TimeSpan.FromSeconds(8);
         return client;
     }
+
+    /// <summary>
+    /// GET 请求 + 瞬时网络错误重试。
+    /// ZeroTier 隧道刚建立时通路还在收敛，偶发「连接被远端强制关闭（10054）」或短暂超时；
+    /// 读接口重试是安全的（无副作用），POST（创建/加入房间、鉴权）不重试以免重复提交。
+    /// </summary>
+    private async Task<HttpResponseMessage> GetWithRetryAsync(HttpClient client, string url, CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (IsTransientNetworkError(ex) && attempt < MAX_GET_ATTEMPTS)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "访问中继服务器时网络抖动（第 {Attempt}/{Max} 次尝试），{Delay}ms 后重试：{Url}",
+                    attempt, MAX_GET_ATTEMPTS, RETRY_DELAY_MS, url);
+                await Task.Delay(RETRY_DELAY_MS, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < MAX_GET_ATTEMPTS)
+            {
+                // 客户端超时（8 秒）但用户没有取消：隧道冷启动时首轮握手可能超时，重试一次。
+                _logger.LogWarning(
+                    "访问中继服务器超时（第 {Attempt}/{Max} 次尝试），{Delay}ms 后重试：{Url}",
+                    attempt, MAX_GET_ATTEMPTS, RETRY_DELAY_MS, url);
+                await Task.Delay(RETRY_DELAY_MS, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>连接级网络错误（底层是 Socket/IO 异常，如 10054 被远端关闭）视为瞬时错误。</summary>
+    private static bool IsTransientNetworkError(HttpRequestException ex)
+        => ex.InnerException is IOException or SocketException;
 
     private static StringContent BuildJson<T>(T payload, JsonTypeInfo<T> typeInfo)
         => new(JsonSerializer.Serialize(payload, typeInfo), Encoding.UTF8, "application/json");
