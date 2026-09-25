@@ -10,13 +10,14 @@ using System.Threading.Tasks;
 namespace kiriyamalauncher.Data;
 
 /// <summary>
-/// macOS 实现：自动发现 ZeroTier 虚拟网卡并调整它的路由度量（metric）。
+/// macOS 实现：自动发现 ZeroTier 虚拟网卡并调整它的路由优先级。
 ///
-/// 说明：macOS 没有 Linux/Windows 那样直观的「接口 metric」概念，路由优先级主要由
-/// 路由表的度量值决定。这里通过 <c>ifconfig</c> 枚举网卡（ZeroTier One 在 macOS 上
-/// 同样用 <c>zt</c> 前缀），并用 <c>ifconfig &lt;iface&gt; metric &lt;n&gt;</c> 尝试设置；
-/// 若系统不支持该语法（取决于 ZeroTier 虚拟接口实现），返回明确提示让用户用
-/// <c>route -n add -interface &lt;iface&gt;</c> 手动指定。
+/// 说明：macOS 没有 Linux「ip link ... metric」那样直接的接口 metric 概念，但 ZeroTier One
+/// 在 macOS 上会为每个网络分配一个 <c>zt&lt;id&gt;</c> 虚拟接口，其路由优先级由
+/// <c>route -n add</c> 里指定 <c>-interface</c> 时生效。这里通过 <c>ifconfig -l</c> 枚举网卡
+/// （ZeroTier One 同样用 <c>zt</c> 前缀），并用 <c>ifconfig &lt;iface&gt; metric &lt;n&gt;</c>
+/// 尝试设置（较新 macOS 的 ifconfig 已支持 metric 参数）；若该参数不被支持，则降级为
+/// <c>route -n add -interface &lt;iface&gt;</c> 指定走该接口，并返回可执行的手动提示。
 /// </summary>
 public sealed class MacRouteMetricService : IRouteMetricService
 {
@@ -48,6 +49,7 @@ public sealed class MacRouteMetricService : IRouteMetricService
             return new RouteMetricResult(false, string.Empty, hint);
         }
 
+        // 首选：较新 macOS 的 ifconfig 支持 metric 参数。
         ProcessRunResult result = await RunProcessAsync(
             "ifconfig",
             [target.Value.Name, "metric", metric.ToString(CultureInfo.InvariantCulture)],
@@ -59,8 +61,21 @@ public sealed class MacRouteMetricService : IRouteMetricService
             return new RouteMetricResult(true, target.Value.Name, $"已把「{target.Value.Name}」的优先级调到最高（metric={metric}）。");
         }
 
-        // macOS 的 ZeroTier 虚拟接口不一定支持 metric 参数，给出可执行的兜底提示。
-        string message = $"自动调整「{target.Value.Name}」metric 失败（{result.ErrorText}）。macOS 建议手动指定路由：sudo route -n add -interface {target.Value.Name}";
+        // 降级：route -n add -interface <iface>（对不支持 metric 参数的旧版 ifconfig 仍能指定路由走该接口）。
+        string routeCommand = $"-n add -interface {target.Value.Name} -net 0.0.0.0 0.0.0.0";
+        ProcessRunResult route = await RunProcessAsync(
+            "route",
+            routeCommand.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
+
+        if (route.IsSuccess)
+        {
+            _logger.LogInformation("已通过 route 指定 ZeroTier 网卡「{Iface}」承载路由。", target.Value.Name);
+            return new RouteMetricResult(true, target.Value.Name, $"已把「{target.Value.Name}」设为承载路由的接口。");
+        }
+
+        // 两者都失败：给出可执行的手动提示。
+        string message = $"自动调整「{target.Value.Name}」优先级失败（ifconfig：{result.ErrorText}；route：{route.ErrorText}）。macOS 请手动执行：sudo route -n add -interface {target.Value.Name} -net 0.0.0.0 0.0.0.0";
         return new RouteMetricResult(false, target.Value.Name, message);
     }
 

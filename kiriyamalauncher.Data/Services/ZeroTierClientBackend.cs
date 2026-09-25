@@ -1014,7 +1014,6 @@ public class ZeroTierClientBackend : IZeroTierBackend
         => LeaveNetworkAsync(networkId, cancellationToken);
 
     /// <summary>
-    /// <summary>
     /// 提高 ZeroTier One 虚拟网卡的接口优先级（metric），让游戏流量优先走隧道。
     /// 委托给跨平台 <see cref="IRouteMetricService"/>（按平台自动发现网卡并调整 metric）。
     /// 失败只记日志、不抛异常——网卡优先级是优化项，不能反过来阻断联机。

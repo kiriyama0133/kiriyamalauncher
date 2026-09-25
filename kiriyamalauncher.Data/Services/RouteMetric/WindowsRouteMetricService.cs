@@ -170,28 +170,35 @@ public sealed class WindowsRouteMetricService : IRouteMetricService
             return results;
         }
 
-        // 输出形如：
+        // 输出形如（中文）：
         //   管理状态    状态          类型       接口名称
         //   已启用       已连接        专用       Ethernet
         //   已启用       已连接        专用       ZeroTier One [bb40b36408000001]
-        // 接口名称在行尾，直接按行取最后一列即可。
+        // 或（英文系统）：
+        //   Admin State  State         Type       Interface Name
+        //   Enabled      Connected     Dedicated  Ethernet
+        //   Enabled      Connected     Dedicated  ZeroTier One [bb40b36408000001]
+        // 接口名称在行尾（且是行里唯一可能含空格的列），直接取行首「类型列」之后的剩余部分即可；
+        // 类型列的关键字按语言自适应（中文「专用」/ 英文「Dedicated」），两者都没有就退回取最后一列。
         foreach (string line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             string trimmed = line.Trim();
-            if (trimmed.Length == 0 || trimmed.StartsWith("管理状态", StringComparison.Ordinal) || trimmed.StartsWith("---", StringComparison.Ordinal))
+            if (trimmed.Length == 0 || trimmed.StartsWith("管理状态", StringComparison.Ordinal) || trimmed.StartsWith("Admin State", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("---", StringComparison.Ordinal))
             {
                 continue;
             }
 
-            // 接口名称是行里最后一个非空 token（可能含空格，取「类型」列之后的部分）。
-            int typeIndex = trimmed.LastIndexOf("专用", StringComparison.Ordinal);
+            // 接口名称在行尾，取「类型列」关键字之后、行尾之前的部分；找不到类型列就退化为最后一列。
+            int typeIndex = trimmed.LastIndexOf("专用", StringComparison.OrdinalIgnoreCase);
+            int typeKeywordLength = "专用".Length;
             if (typeIndex < 0)
             {
-                typeIndex = trimmed.LastIndexOf("专用", StringComparison.OrdinalIgnoreCase);
+                typeIndex = trimmed.LastIndexOf("Dedicated", StringComparison.OrdinalIgnoreCase);
+                typeKeywordLength = "Dedicated".Length;
             }
 
             string name = typeIndex >= 0
-                ? trimmed[(typeIndex + "专用".Length)..].Trim()
+                ? trimmed[(typeIndex + typeKeywordLength)..].Trim()
                 : trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries)[^1].Trim();
 
             if (!string.IsNullOrWhiteSpace(name))
