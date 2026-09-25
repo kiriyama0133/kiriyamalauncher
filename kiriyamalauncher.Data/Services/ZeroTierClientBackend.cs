@@ -1015,8 +1015,10 @@ public class ZeroTierClientBackend : IZeroTierBackend
 
     /// <summary>
     /// 提高 ZeroTier One 虚拟网卡的接口优先级（metric），让游戏流量优先走隧道。
-    /// 委托给跨平台 <see cref="IRouteMetricService"/>（按平台自动发现网卡并调整 metric）。
-    /// 失败只记日志、不抛异常——网卡优先级是优化项，不能反过来阻断联机。
+    /// 委托给跨平台 <see cref="IRouteMetricService"/>（按平台自动发现网卡并调整 metric，
+    /// 且下发后会读回校验，避免「命令没生效但退出码为 0」的假成功）。
+    /// 失败不抛异常——网卡优先级是优化项，不能反过来阻断联机；但会记日志并播报事件，
+    /// 让失败在界面/日志里可见，而不是静默消失。
     /// </summary>
     public async Task RaiseVirtualInterfacePriorityAsync(CancellationToken cancellationToken = default)
     {
@@ -1032,6 +1034,7 @@ public class ZeroTierClientBackend : IZeroTierBackend
             else
             {
                 _logger.LogWarning("调整 ZeroTier 网卡优先级未成功（不影响联机）：{Message}", result.Message);
+                EventRaised?.Invoke(this, $"注意：网卡优先级未能提升，游戏流量可能不走隧道 —— {result.Message}");
             }
         }
         catch (OperationCanceledException)
@@ -1040,8 +1043,9 @@ public class ZeroTierClientBackend : IZeroTierBackend
         }
         catch (Exception ex)
         {
-            // 优化项失败不能阻断联机，只记录。
+            // 优化项失败不能阻断联机，只记录 + 播报。
             _logger.LogWarning(ex, "提高 ZeroTier 虚拟网卡优先级失败（不影响联机，可手动设置 metric）。");
+            EventRaised?.Invoke(this, $"注意：提高虚拟网卡优先级时出错：{ex.Message}");
         }
     }
 

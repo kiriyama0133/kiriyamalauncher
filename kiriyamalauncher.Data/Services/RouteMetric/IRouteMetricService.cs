@@ -7,7 +7,14 @@ namespace kiriyamalauncher.Data;
 /// <param name="Name">接口名/别名（Windows：InterfaceAlias，如「ZeroTier One [bb40b36408000001]」；Linux/macOS：如 ztbb40b36408、ztabc1234）。</param>
 /// <param name="DisplayName">给用户看的名称（Windows 的 Description，其它平台通常等于 Name）。</param>
 /// <param name="Metric">当前路由度量值（metric，越小优先级越高）；拿不到时为 null。</param>
-public readonly record struct NetworkInterfaceInfo(string Name, string DisplayName, int? Metric);
+/// <param name="IfIndex">
+/// 系统接口索引（Windows 的 ifIndex、Linux/macOS 的 link index）；拿不到时为 null。
+/// 下发设置时**优先用索引而不是名字**：Windows 的别名里含方括号
+/// （如 <c>ZeroTier One [bb40b36408000001]</c>），而 PowerShell 的 -InterfaceAlias 支持通配符、
+/// 会把 <c>[...]</c> 当字符集解析，结果是「静默匹配 0 个对象、不报错、退出码 0」的假成功；
+/// 索引是纯数字，天然规避该问题。
+/// </param>
+public readonly record struct NetworkInterfaceInfo(string Name, string DisplayName, int? Metric, int? IfIndex = null);
 
 /// <summary>网卡优先级（metric）调整结果。</summary>
 /// <param name="IsSuccess">是否成功。</param>
