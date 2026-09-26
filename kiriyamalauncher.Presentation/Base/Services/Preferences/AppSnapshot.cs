@@ -33,6 +33,18 @@ public class AppSnapshot : IAppSnapshot
     private const double MIN_FONT_SIZE = 12d;
     private const double MAX_FONT_SIZE = 22d;
 
+    /// <summary>行高与字号的比值：把「一行文字」换算成固定像素高度时用。</summary>
+    private const double LINE_HEIGHT_RATIO = 1.4d;
+
+    // 下面几个是游戏卡片（GameCard.axaml）里写死的排版尺寸，换算卡片高度时要用到；
+    // 改动卡片的封面高度 / 内边距时，这里要同步改。
+    private const double GAME_CARD_COVER_HEIGHT = 120d;
+    private const double GAME_CARD_TEXT_TOP_PADDING = 12d;
+    private const double GAME_CARD_TEXT_BOTTOM_PADDING = 14d;
+    private const double GAME_CARD_TEXT_SPACING = 6d;
+    private const double GAME_CARD_BORDER_THICKNESS = 2d;
+    private const double GAME_CARD_DESC_SAFETY = 2d;
+
     private const string DEFAULT_COLOR_THEME = "Blue";
     private const string DEFAULT_BASE_THEME = "Default";
 
@@ -458,6 +470,17 @@ public class AppSnapshot : IAppSnapshot
         Application.Current.Resources["AppFontSizeLarge"] = fontSize + 1d;
         Application.Current.Resources["AppFontSizeSubtitle"] = fontSize + 4d;
         Application.Current.Resources["AppFontSizeTitle"] = fontSize + 12d;
+
+        // 游戏卡片尺寸：宽固定 220（写在 GameCard.axaml），高由这里算好后写进资源。
+        // 卡片高度不随内容撑开，简介固定占两行，所以同排卡片永远等高、底边对齐。
+        double descLineHeight = Math.Round((fontSize - 2d) * LINE_HEIGHT_RATIO);
+        double descHeight = (descLineHeight * 2d) + GAME_CARD_DESC_SAFETY;
+        double titleLineHeight = Math.Round((fontSize + 1d) * LINE_HEIGHT_RATIO);
+
+        Application.Current.Resources["AppGameCardDescHeight"] = descHeight;
+        Application.Current.Resources["AppGameCardHeight"] = GAME_CARD_COVER_HEIGHT
+            + GAME_CARD_TEXT_TOP_PADDING + titleLineHeight + GAME_CARD_TEXT_SPACING
+            + descHeight + GAME_CARD_TEXT_BOTTOM_PADDING + GAME_CARD_BORDER_THICKNESS;
 
         // SukiUI / Avalonia 自带控件用的字号资源。
         Application.Current.Resources["FontSizeSmall"] = Math.Max(MIN_FONT_SIZE - 2d, fontSize - 1d);

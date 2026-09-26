@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -404,68 +405,93 @@ public class ZeroTierClientBackend : IZeroTierBackend
 
         Interlocked.Exchange(ref _consecutiveRefreshFailures, 0);
 
-        using JsonDocument document = ParseListNetworksJson(result.RawOutput);
+        JsonDocument document;
 
-        List<NetworkInfo> networks = new();
-
-        foreach (JsonElement network in document.RootElement.EnumerateArray())
+        try
         {
-            ulong id = 0;
+            document = ParseListNetworksJson(result.RawOutput);
+        }
+        catch (JsonException ex)
+        {
+            // 输出不是合法 JSON（畸形/截断）：按本轮刷新失败处理，保留上一份快照，
+            // 不把异常抛给上层 —— 否则「连接虚拟局域网」会直接失败在解析阶段。
+            int parseFailures = Interlocked.Increment(ref _consecutiveRefreshFailures);
 
-            if (network.TryGetProperty("nwid", out JsonElement nwid))
+            if (parseFailures <= 2 || parseFailures % 10 == 0)
             {
-                if (nwid.ValueKind == JsonValueKind.String)
-                {
-                    ulong.TryParse(nwid.GetString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out id);
-                }
-                else if (nwid.ValueKind == JsonValueKind.Number)
-                {
-                    id = nwid.GetUInt64();
-                }
+                _logger.LogWarning(
+                    ex,
+                    "解析 listnetworks -j 输出失败（连续 {Failures} 次），保留上一份网络状态。输出片段：{Snippet}",
+                    parseFailures,
+                    BuildSnippet(result.RawOutput));
             }
 
-            if (id == 0)
-            {
-                continue;
-            }
-
-            string status = network.TryGetProperty("status", out JsonElement statusElement)
-                            && statusElement.ValueKind == JsonValueKind.String
-                ? statusElement.GetString() ?? string.Empty
-                : string.Empty;
-
-            string virtualIp = string.Empty;
-
-            if (network.TryGetProperty("assignedAddresses", out JsonElement addresses))
-            {
-                foreach (JsonElement address in addresses.EnumerateArray())
-                {
-                    string? value = address.GetString();
-
-                    if (value is null || !value.Contains('.', StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    // assignedAddresses 形如 "10.74.203.111/24"（带 CIDR 前缀长度），
-                    // 这里必须剥掉后缀只留纯 IP：隧道校验、发现报文回包、自机比对、
-                    // 界面显示都要求纯 IP —— 之前直接透传 "/24" 导致隧道启动被拒
-                    // （「不是合法的本机虚拟 IP」）。
-                    string bareIp = value.Split('/')[0].Trim();
-
-                    if (bareIp.Length > 0 && System.Net.IPAddress.TryParse(bareIp, out _))
-                    {
-                        virtualIp = bareIp;
-                        break;
-                    }
-                }
-            }
-
-            networks.Add(new NetworkInfo(id, status, virtualIp));
+            return;
         }
 
-        NetworkSnapshot previous = Volatile.Read(ref _snapshot);
-        Volatile.Write(ref _snapshot, new NetworkSnapshot(previous.NodeId, networks));
+        using (document)
+        {
+            List<NetworkInfo> networks = new();
+
+            foreach (JsonElement network in document.RootElement.EnumerateArray())
+            {
+                ulong id = 0;
+
+                if (network.TryGetProperty("nwid", out JsonElement nwid))
+                {
+                    if (nwid.ValueKind == JsonValueKind.String)
+                    {
+                        ulong.TryParse(nwid.GetString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out id);
+                    }
+                    else if (nwid.ValueKind == JsonValueKind.Number)
+                    {
+                        id = nwid.GetUInt64();
+                    }
+                }
+
+                if (id == 0)
+                {
+                    continue;
+                }
+
+                string status = network.TryGetProperty("status", out JsonElement statusElement)
+                                && statusElement.ValueKind == JsonValueKind.String
+                    ? statusElement.GetString() ?? string.Empty
+                    : string.Empty;
+
+                string virtualIp = string.Empty;
+
+                if (network.TryGetProperty("assignedAddresses", out JsonElement addresses))
+                {
+                    foreach (JsonElement address in addresses.EnumerateArray())
+                    {
+                        string? value = address.GetString();
+
+                        if (value is null || !value.Contains('.', StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        // assignedAddresses 形如 "10.74.203.111/24"（带 CIDR 前缀长度），
+                        // 这里必须剥掉后缀只留纯 IP：隧道校验、发现报文回包、自机比对、
+                        // 界面显示都要求纯 IP —— 之前直接透传 "/24" 导致隧道启动被拒
+                        // （「不是合法的本机虚拟 IP」）。
+                        string bareIp = value.Split('/')[0].Trim();
+
+                        if (bareIp.Length > 0 && System.Net.IPAddress.TryParse(bareIp, out _))
+                        {
+                            virtualIp = bareIp;
+                            break;
+                        }
+                    }
+                }
+
+                networks.Add(new NetworkInfo(id, status, virtualIp));
+            }
+
+            NetworkSnapshot previous = Volatile.Read(ref _snapshot);
+            Volatile.Write(ref _snapshot, new NetworkSnapshot(previous.NodeId, networks));
+        }
     }
 
     /// <summary>刷新一次快照，异常只记日志（用于 join/leave 后立即刷新，不等下个周期）。</summary>
@@ -1016,7 +1042,8 @@ public class ZeroTierClientBackend : IZeroTierBackend
     /// <summary>
     /// 提高 ZeroTier One 虚拟网卡的接口优先级（metric），让游戏流量优先走隧道。
     /// 委托给跨平台 <see cref="IRouteMetricService"/>（按平台自动发现网卡并调整 metric，
-    /// 且下发后会读回校验，避免「命令没生效但退出码为 0」的假成功）。
+    /// 下发后会读回校验，避免「命令没生效但退出码为 0」的假成功；
+    /// 还会把**同样处于最高优先级的其它虚拟网卡**下调一档，避免并列导致我们的网卡排到后面）。
     /// 失败不抛异常——网卡优先级是优化项，不能反过来阻断联机；但会记日志并播报事件，
     /// 让失败在界面/日志里可见，而不是静默消失。
     /// </summary>
@@ -1024,11 +1051,20 @@ public class ZeroTierClientBackend : IZeroTierBackend
     {
         try
         {
-            RouteMetricResult result = await _routeMetric.RaiseZeroTierMetricAsync(_currentNetworkId, 1, cancellationToken).ConfigureAwait(false);
+            RouteMetricResult result = await _routeMetric.RaiseZeroTierMetricAsync(_currentNetworkId, RouteMetricPolicy.TOP_METRIC, cancellationToken).ConfigureAwait(false);
 
             if (result.IsSuccess)
             {
                 _logger.LogInformation("ZeroTier 网卡优先级已调整：{Message}", result.Message);
+
+                if (result.DemotedInterfaces is { Count: > 0 } demoted)
+                {
+                    // 这些不是我们的网卡，改动它们的优先级是有代价的，单独列一行方便排查/还原。
+                    _logger.LogInformation(
+                        "为消除并列，已下调 {Count} 块其它虚拟网卡的优先级：{Names}（原值见上文日志，如需还原请手动设置）。",
+                        demoted.Count, string.Join('、', demoted));
+                }
+
                 EventRaised?.Invoke(this, result.Message);
             }
             else
@@ -1427,28 +1463,49 @@ public class ZeroTierClientBackend : IZeroTierBackend
         }
     }
 
-    /// <summary>从 listnetworks -j 输出里提取全部网络 ID。</summary>
-    private static List<ulong> ExtractNetworkIds(string? rawOutput)
+    /// <summary>
+    /// 从 listnetworks -j 输出里提取全部网络 ID。
+    /// 输出不是合法 JSON 时只记日志并返回空表：清理遗留网络是「尽力而为」，
+    /// 绝不能因为一段畸形输出把整个连接流程打断（清理不成，join 照常继续）。
+    /// </summary>
+    private List<ulong> ExtractNetworkIds(string? rawOutput)
     {
         List<ulong> ids = [];
 
-        using JsonDocument document = ParseListNetworksJson(rawOutput);
+        JsonDocument document;
 
-        foreach (JsonElement network in document.RootElement.EnumerateArray())
+        try
         {
-            if (!network.TryGetProperty("nwid", out JsonElement nwid))
-            {
-                continue;
-            }
+            document = ParseListNetworksJson(rawOutput);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(
+                "listnetworks -j 输出不是合法 JSON，已跳过本次遗留网络清理：{Message}；输出片段：{Snippet}",
+                ex.Message,
+                BuildSnippet(rawOutput));
 
-            if (nwid.ValueKind == JsonValueKind.String
-                && ulong.TryParse(nwid.GetString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong id))
+            return ids;
+        }
+
+        using (document)
+        {
+            foreach (JsonElement network in document.RootElement.EnumerateArray())
             {
-                ids.Add(id);
-            }
-            else if (nwid.ValueKind == JsonValueKind.Number && nwid.TryGetUInt64(out ulong numericId))
-            {
-                ids.Add(numericId);
+                if (!network.TryGetProperty("nwid", out JsonElement nwid))
+                {
+                    continue;
+                }
+
+                if (nwid.ValueKind == JsonValueKind.String
+                    && ulong.TryParse(nwid.GetString(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong id))
+                {
+                    ids.Add(id);
+                }
+                else if (nwid.ValueKind == JsonValueKind.Number && nwid.TryGetUInt64(out ulong numericId))
+                {
+                    ids.Add(numericId);
+                }
             }
         }
 
@@ -1479,7 +1536,8 @@ public class ZeroTierClientBackend : IZeroTierBackend
                 return;
             }
 
-            using JsonDocument document = JsonDocument.Parse(json[start..]);
+            // 同样先清理字符串里的裸控制字符（与 listnetworks -j 同一个坑）。
+            using JsonDocument document = JsonDocument.Parse(SanitizeJsonStringLiterals(json[start..]));
 
             int totalPeers = 0;
             int activePeers = 0;
@@ -1621,7 +1679,18 @@ public class ZeroTierClientBackend : IZeroTierBackend
         return parts.Length >= 5 ? parts[^1] : null;
     }
 
-    /// <summary>把 listnetworks -j 的原始输出解析成 JSON（可能夹带非 JSON 前缀，从第一个 '[' 截取）。</summary>
+    /// <summary>
+    /// 把 listnetworks -j 的原始输出解析成 JSON（可能夹带非 JSON 前缀，从第一个 '[' 截取）。
+    ///
+    /// 解析前先清掉字符串字面量里没有转义的原始控制字符：ZeroTier 在部分版本 / 部分网络名
+    /// （名字里带换行）下会输出「字符串里夹裸 CR/LF」的非法 JSON，System.Text.Json 会直接抛
+    /// 「'0x0D' is invalid within a JSON string」——不同机器上已加入的网络清单不同，
+    /// 所以这类输出只在部分主机上出现。我们只取 nwid / status / assignedAddresses，
+    /// 丢掉字符串里的换行没有任何影响。
+    ///
+    /// 清理后仍可能抛 <see cref="JsonException"/>（输出被截断等其他畸形情况），
+    /// 由调用方决定降级策略，绝不让它冒到界面上。
+    /// </summary>
     private static JsonDocument ParseListNetworksJson(string? rawOutput)
     {
         string json = rawOutput?.Trim() ?? string.Empty;
@@ -1632,7 +1701,81 @@ public class ZeroTierClientBackend : IZeroTierBackend
             return JsonDocument.Parse("[]");
         }
 
-        return JsonDocument.Parse(json[start..]);
+        return JsonDocument.Parse(SanitizeJsonStringLiterals(json[start..]));
+    }
+
+    /// <summary>
+    /// 清掉 JSON 字符串字面量内部的原始控制字符（CR / LF / TAB / NUL 等）。
+    /// 字符串外的换行与缩进原样保留；转义序列（\" 与 \\ 等）按两字符整体跳过，
+    /// 不会把转义引号误判成字符串结束。
+    /// </summary>
+    private static string SanitizeJsonStringLiterals(string json)
+    {
+        bool inString = false;
+        bool escaped = false;
+        StringBuilder? sanitized = null;
+
+        for (int i = 0; i < json.Length; i++)
+        {
+            char current = json[i];
+
+            if (!inString)
+            {
+                sanitized?.Append(current);
+
+                if (current == '"')
+                {
+                    inString = true;
+                }
+
+                continue;
+            }
+
+            if (escaped)
+            {
+                escaped = false;
+                sanitized?.Append(current);
+                continue;
+            }
+
+            switch (current)
+            {
+                case '\\':
+                    escaped = true;
+                    sanitized?.Append(current);
+                    continue;
+
+                case '"':
+                    inString = false;
+                    sanitized?.Append(current);
+                    continue;
+            }
+
+            if (char.IsControl(current))
+            {
+                // 字符串里出现裸控制字符：JSON 非法，直接丢掉。
+                // 第一次命中时才复制前缀，正常情况下（输出合法）完全不分配。
+                sanitized ??= new StringBuilder(json.Length).Append(json, 0, i);
+                continue;
+            }
+
+            sanitized?.Append(current);
+        }
+
+        return sanitized?.ToString() ?? json;
+    }
+
+    /// <summary>截取输出片段写进日志（压平换行，避免一条日志刷屏）。</summary>
+    private static string BuildSnippet(string? rawOutput, int maxLength = 200)
+    {
+        if (string.IsNullOrEmpty(rawOutput))
+        {
+            return "（无输出）";
+        }
+
+        string flat = rawOutput.Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+        return flat.Length <= maxLength ? flat : string.Concat(flat.AsSpan(0, maxLength), "…");
     }
 
     /// <summary>
@@ -1661,7 +1804,7 @@ public class ZeroTierClientBackend : IZeroTierBackend
             ProcessRunResult result = await RunProcessAsync(
                 executable,
                 Path.GetDirectoryName(executable) ?? string.Empty,
-                arguments, COMMAND_TIMEOUT, cancellationToken).ConfigureAwait(false);
+                arguments, COMMAND_TIMEOUT, cancellationToken, Encoding.UTF8).ConfigureAwait(false);
 
             if (!result.IsSuccess)
             {
@@ -1696,7 +1839,8 @@ public class ZeroTierClientBackend : IZeroTierBackend
         string workingDirectory,
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Encoding? outputEncoding = null)
     {
         ProcessStartInfo startInfo = new(executable)
         {
@@ -1704,7 +1848,13 @@ public class ZeroTierClientBackend : IZeroTierBackend
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+
+            // 显式指定解码方式：不指定时按「控制台代码页」解码（中文系统是 GBK），
+            // 而 ZeroTier CLI 输出的是 UTF-8 —— 网络名之类的非 ASCII 内容会变成乱码，
+            // 不同区域设置的机器表现还不一样。取回 JSON 的命令统一按 UTF-8 解。
+            StandardOutputEncoding = outputEncoding,
+            StandardErrorEncoding = outputEncoding
         };
 
         foreach (string argument in arguments)

@@ -2,17 +2,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             mc:Ignorable="d" d:DesignWidth="220" d:DesignHeight="210"
+             mc:Ignorable="d" d:DesignWidth="220" d:DesignHeight="211"
              x:Class="kiriyamalauncher.Presentation.Base.Controls.GameCard"
              x:DataType="vm:GameViewModel"
 			 xmlns:vm="clr-namespace:kiriyamalauncher.Presentation.ViewModels"
 			 xmlns:i="using:Material.Icons.Avalonia"
-			 Width="220">
+			 Width="220"
+			 Height="{DynamicResource AppGameCardHeight}">
 
 	<!--
 		游戏卡片：上面封面图，下面文字（游戏名 / 介绍）。
 		DataContext 是 GameViewModel；没配封面图时显示占位图。
 		边线颜色与悬停高亮由使用方（GameSessionView 的 card 按钮）设置。
+
+		宽高都是写死的（不随内容撑开）：宽固定 220，高取 AppGameCardHeight。
+		该高度由 AppSnapshot.ApplyFontSize 按当前字号算出（封面 120 + 内边距 + 标题一行 + 简介两行），
+		字号改了资源跟着变，所以同排卡片永远等高，也不会把文字裁掉。
 	-->
 	<Border Name="PART_Card"
 			CornerRadius="14"
@@ -47,13 +52,20 @@
 						   MaxLines="1"
 						   TextTrimming="CharacterEllipsis" />
 
-				<TextBlock Text="{Binding Description}"
-						   FontSize="{DynamicResource AppFontSizeSmall}"
-						   Opacity="0.7"
-						   MinHeight="32"
-						   MaxLines="2"
-						   TextWrapping="Wrap"
-						   TextTrimming="CharacterEllipsis" />
+				<!--
+					介绍文案固定占两行高度（按当前字号算出，见 AppGameCardDescHeight）。
+					不能用 MinHeight：单行文案被撑到 MinHeight、两行文案又把它撑高，卡底就会错位。
+					固定成两行高度后，不管文案是几行，卡片外框都一模一样。
+				-->
+				<Panel Height="{DynamicResource AppGameCardDescHeight}" ClipToBounds="True">
+					<TextBlock Text="{Binding Description}"
+							   FontSize="{DynamicResource AppFontSizeSmall}"
+							   Opacity="0.7"
+							   MaxLines="2"
+							   TextWrapping="Wrap"
+							   TextTrimming="CharacterEllipsis"
+							   VerticalAlignment="Top" />
+				</Panel>
 			</StackPanel>
 
 		</StackPanel>

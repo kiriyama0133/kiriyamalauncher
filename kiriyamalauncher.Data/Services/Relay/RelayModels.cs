@@ -29,20 +29,48 @@ public sealed record RelayRoom(
 /// <param name="Nickname">玩家昵称（界面只显示这个）。</param>
 /// <param name="NodeId">玩家节点 ID。</param>
 /// <param name="VirtualIp">玩家虚拟 IP（延迟探测目标）。</param>
+/// <param name="IsHost">该玩家是不是当前房主（界面据此显示房主标识）。</param>
 public sealed record RelayPlayer(
     Guid PlayerId,
     string Nickname,
     string NodeId,
-    string VirtualIp);
+    string VirtualIp,
+    bool IsHost);
 
 /// <summary>房间详情（房间名 + 成员列表）。</summary>
 /// <param name="RoomId">房间标识。</param>
 /// <param name="RoomName">房间名。</param>
+/// <param name="HostNodeId">房主节点 ID（客户端据此判断自己是不是房主）。</param>
 /// <param name="Players">房间内玩家。</param>
 public sealed record RelayRoomPlayers(
     string RoomId,
     string RoomName,
+    string HostNodeId,
     IReadOnlyList<RelayPlayer> Players);
+
+/// <summary>
+/// 一条房间实时事件（服务端经 SSE 推送）。
+/// 房间销毁、房主变更这类「别人触发的状态变化」靠它即时送达，无需等下一次轮询。
+/// </summary>
+/// <param name="Type">事件类型，取值见 <see cref="RelayRoomEventTypes"/>。</param>
+/// <param name="Reason">发生原因（房间解散时给用户看的说明）。</param>
+/// <param name="HostName">新房主昵称（房主变更时有效）。</param>
+/// <param name="HostNodeId">新房主节点 ID（房主变更时有效）。</param>
+public sealed record RelayRoomEvent(
+    string Type,
+    string? Reason,
+    string? HostName,
+    string? HostNodeId);
+
+/// <summary>房间实时事件的类型名（与服务端 RoomEventTypes 约定一致）。</summary>
+public static class RelayRoomEventTypes
+{
+    /// <summary>房间已被销毁（房主退出或房间空了）：客户端应立即退出房间页面。</summary>
+    public const string RoomClosed = "room_closed";
+
+    /// <summary>房主已变更：刷新房主标识与转让入口的可见性。</summary>
+    public const string HostChanged = "host_changed";
+}
 
 /// <summary>中继服务器上的一个游戏板块（只读列表项）。</summary>
 /// <param name="Key">游戏稳定标识（如 civ6）。</param>

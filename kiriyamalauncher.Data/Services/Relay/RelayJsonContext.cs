@@ -28,6 +28,7 @@ internal sealed class CreateRoomRequestDto
 {
     public string Name { get; set; } = string.Empty;
     public string HostName { get; set; } = string.Empty;
+    public string? HostNodeId { get; set; }
     public string Game { get; set; } = string.Empty;
     public string? Password { get; set; }
     public int MaxPlayers { get; set; }
@@ -102,6 +103,7 @@ internal sealed class RelayRoomPlayersDto
 {
     public string? RoomId { get; set; }
     public string? RoomName { get; set; }
+    public string? HostNodeId { get; set; }
     public List<RelayPlayerDto>? Players { get; set; }
 }
 
@@ -112,6 +114,23 @@ internal sealed class RelayPlayerDto
     public string? Nickname { get; set; }
     public string? NodeId { get; set; }
     public string? VirtualIp { get; set; }
+    public bool IsHost { get; set; }
+}
+
+/// <summary>转让房主请求体（camelCase）。</summary>
+internal sealed class TransferHostRequestDto
+{
+    public string RequesterNodeId { get; set; } = string.Empty;
+    public string TargetNodeId { get; set; } = string.Empty;
+}
+
+/// <summary>SSE 推送的房间事件 JSON 结构（camelCase）。</summary>
+internal sealed class RoomEventDto
+{
+    public string? Type { get; set; }
+    public string? Reason { get; set; }
+    public string? HostName { get; set; }
+    public string? HostNodeId { get; set; }
 }
 
 /// <summary>
@@ -136,6 +155,8 @@ internal sealed class RelayPlayerDto
 [JsonSerializable(typeof(RelayRoomPlayersDto))]
 [JsonSerializable(typeof(List<RelayPlayerDto>))]
 [JsonSerializable(typeof(RelayPlayerDto))]
+[JsonSerializable(typeof(TransferHostRequestDto))]
+[JsonSerializable(typeof(RoomEventDto))]
 internal sealed partial class RelayJsonContext : JsonSerializerContext
 {
 }

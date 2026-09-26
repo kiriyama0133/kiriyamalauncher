@@ -19,6 +19,9 @@ namespace kiriyamalauncher.Presentation.ViewModels;
 /// </summary>
 public partial class RoomsViewModel : ObservableObject
 {
+    /// <summary>没有选定板块时的兜底游戏标识（与文明 6 的集成标识一致）。</summary>
+    private const string DEFAULT_GAME_KEY = "civ6";
+
     private readonly IRelayServerClient _relay;
     private readonly IAppSnapshot _snapshot;
     private readonly IAppNotifier _notifier;
@@ -28,6 +31,12 @@ public partial class RoomsViewModel : ObservableObject
     private readonly ILogger<RoomPageViewModel> _roomLogger;
 
     private IReadOnlyList<RelayRoom> _allRooms = [];
+
+    /// <summary>
+    /// 当前游戏板块的标识（如 civ6 / mc）。进入板块时由 GameSessionViewModel 设置：
+    /// 创建房间时上报给服务端、房间列表按它过滤。为空表示不按板块过滤（显示全部）。
+    /// </summary>
+    private string? _activeGameKey;
 
     /// <summary>房间列表（已按搜索词过滤）。</summary>
     public ObservableCollection<RoomRowViewModel> Rooms { get; } = [];
@@ -97,6 +106,32 @@ public partial class RoomsViewModel : ObservableObject
     /// <summary>连接中继服务器并拉取房间列表。</summary>
     public Task ConnectAsync() => LoadRoomsAsync();
 
+    /// <summary>
+    /// 设置当前所在的游戏板块（进入板块时调用）。板块变了就清空旧列表并按新板块重新拉取，
+    /// 否则在 Minecraft 板块里会看到文明 6 的房间。
+    /// </summary>
+    public void SetActiveGame(string? gameKey)
+    {
+        string normalized = (gameKey ?? string.Empty).Trim();
+
+        if (string.Equals(_activeGameKey, normalized, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _activeGameKey = normalized.Length == 0 ? null : normalized;
+        _allRooms = [];
+        ApplyFilter();
+
+        if (IsConnected)
+        {
+            _ = LoadRoomsAsync();
+        }
+    }
+
+    /// <summary>创建房间时上报的游戏板块标识（没有进入具体板块时退回 civ6）。</summary>
+    private string ActiveGameKey => string.IsNullOrWhiteSpace(_activeGameKey) ? DEFAULT_GAME_KEY : _activeGameKey;
+
     /// <summary>房主昵称（用于创建房间时上报给服务器）。</summary>
     private string HostName =>
         string.IsNullOrWhiteSpace(_snapshot.User.Nickname)
@@ -165,10 +200,11 @@ public partial class RoomsViewModel : ObservableObject
     /// <summary>断开中继服务器：清空房间列表与状态（应用层断开，不涉及真实连接）。</summary>
     public void Disconnect()
     {
-        // 如果还在房间内，先停轮询并清掉房间页面状态。
+        // 如果还在房间内，先停轮询与事件流，再清掉房间页面状态。
         if (CurrentRoom is not null)
         {
             CurrentRoom.StopPolling();
+            CurrentRoom.StopEventStream();
             CurrentRoom = null;
         }
 
@@ -197,13 +233,25 @@ public partial class RoomsViewModel : ObservableObject
             return;
         }
 
+        // 创建房间要上报房主节点 ID（服务端据此认定房主，房主退出时解散房间），
+        // 所以在打开对话框之前先把本机 ZeroTier 身份解析出来。
+        if (!TryGetZeroTierIdentity(out string nodeId, out _))
+        {
+            StatusText = "尚未接入 ZeroTier 网络，无法创建房间。";
+            _notifier.Warning(
+                "尚未接入 ZeroTier 网络",
+                "创建房间前，请先点击右上角「连接到虚拟局域网」接入中继服务器的 ZeroTier 网络。");
+            return;
+        }
+
         _dialogManager.CreateDialog()
             .WithViewModel(dialog => new CreateRoomDialogViewModel(
                 dialog,
                 _relay,
                 baseUrl,
-                "civ6",
+                ActiveGameKey,
                 HostName,
+                nodeId,
                 _notifier,
                 (room, password) => _ = JoinAsync(room.Id, room.Name, room.HostName, password)))
             .Dismiss().ByClickingBackground()
@@ -331,13 +379,41 @@ public partial class RoomsViewModel : ObservableObject
             _notifier,
             _roomLogger,
             LeaveCurrentRoomAsync,
+            ExitClosedRoomAsync,
             ResolveBaseUrl);
 
         StatusText = $"已进入房间「{roomName}」。";
         _notifier.Success("已进入房间", $"欢迎来到「{roomName}」。");
 
         CurrentRoom.StartPolling();
+
+        // 同时订阅服务端事件流：房主退出解散房间时会被服务端主动请出（无需等轮询）。
+        CurrentRoom.StartEventStream();
+
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 被动退出：服务端推来 room_closed（房主退出导致房间解散）时直接回大厅。
+    /// 与主动退房的关键区别是<b>不再上报 leave</b> —— 房间都已经不存在了，再上报只会拿到 404。
+    /// </summary>
+    private async Task ExitClosedRoomAsync(string? reason)
+    {
+        RoomPageViewModel? room = CurrentRoom;
+        if (room is null)
+        {
+            return;
+        }
+
+        room.StopPolling();
+        room.StopEventStream();
+        CurrentRoom = null;
+
+        string message = string.IsNullOrWhiteSpace(reason) ? "房间已解散。" : reason;
+        StatusText = $"{message}已回到房间大厅。";
+        _notifier.Warning("已离开房间", message);
+
+        await LoadRoomsAsync();
     }
 
     /// <summary>离开当前房间：上报服务端清除 Tag，停止轮询，回到大厅。</summary>
@@ -351,8 +427,9 @@ public partial class RoomsViewModel : ObservableObject
 
         string baseUrl = ResolveBaseUrl();
 
-        // 先停轮询，避免离开过程中还在探测。
+        // 先停轮询与事件流，避免离开过程中还在探测或收事件。
         room.StopPolling();
+        room.StopEventStream();
 
         if (!string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -399,7 +476,11 @@ public partial class RoomsViewModel : ObservableObject
 
         try
         {
-            IReadOnlyList<RelayRoom> rooms = await _relay.ListRoomsAsync(baseUrl);
+            // 按当前板块拉取：房间大厅只显示本板块的房间。
+            IReadOnlyList<RelayRoom> rooms = string.IsNullOrWhiteSpace(_activeGameKey)
+                ? await _relay.ListRoomsAsync(baseUrl)
+                : await _relay.ListRoomsAsync(baseUrl, _activeGameKey);
+
             _allRooms = rooms;
             ApplyFilter();
             IsConnected = true;

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 
 namespace kiriyamalauncher.Data;
 
@@ -55,6 +56,16 @@ public static class DependencyInjection
                 PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15)
             });
 
+        // SSE 长连接专用客户端：不做连接回收。
+        // 上面那个客户端的 30 秒连接限期是治 10054 的，但事件流是持续连接，
+        // 限期会在传输途中把它掐断，所以事件流必须用这个不设限期的客户端。
+        services.AddHttpClient(HttpRelayServerClient.SseClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
+                PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan
+            });
+
         return services;
     }
 
@@ -67,8 +78,9 @@ public static class DependencyInjection
             : new UnsupportedFirewallService();
 
     /// <summary>
-    /// 网卡优先级（metric）实现按平台选择：Windows 用 PowerShell/netsh，
-    /// Linux 用 ip link，macOS 用 ifconfig，其它平台返回手动提示。
+    /// 网卡优先级（metric）实现按平台选择：Windows 用 PowerShell/netsh（按 ifIndex 下发并读回校验），
+    /// Linux 用路由 metric（ip route，Linux 没有接口级 metric），macOS 用 ifconfig，
+    /// 其它平台返回手动提示。三个实现都会在设好自己之后消除「并列最高优先级」（详见 RouteMetricPolicy）。
     /// </summary>
     private static IRouteMetricService CreateRouteMetricService(IServiceProvider serviceProvider)
     {

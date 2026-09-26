@@ -33,6 +33,14 @@
 		<x:Double x:Key="AppFontSizeLarge">15</x:Double>
 		<x:Double x:Key="AppFontSizeSubtitle">18</x:Double>
 		<x:Double x:Key="AppFontSizeTitle">26</x:Double>
+
+		<!--
+			游戏卡片（GameSessionView 里的 GameCard）的写死尺寸：
+			宽固定 220；高与简介占位高度按字号算出，保证同排卡片永远等高。
+			下面这两个值对应默认字号 14，运行时同样由 AppSnapshot.ApplyFontSize 覆盖。
+		-->
+		<x:Double x:Key="AppGameCardHeight">211</x:Double>
+		<x:Double x:Key="AppGameCardDescHeight">36</x:Double>
 	</Application.Resources>
 	
 </Application>

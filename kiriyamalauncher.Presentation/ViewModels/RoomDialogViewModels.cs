@@ -17,6 +17,7 @@ public partial class CreateRoomDialogViewModel : BaseViewModel
     private readonly string _baseUrl;
     private readonly string _gameKey;
     private readonly string _hostName;
+    private readonly string _hostNodeId;
     private readonly IAppNotifier _notifier;
     private readonly Action<RelayRoom, string?> _onCreated;
 
@@ -38,6 +39,7 @@ public partial class CreateRoomDialogViewModel : BaseViewModel
         string baseUrl,
         string gameKey,
         string hostName,
+        string hostNodeId,
         IAppNotifier notifier,
         Action<RelayRoom, string?> onCreated)
     {
@@ -46,6 +48,7 @@ public partial class CreateRoomDialogViewModel : BaseViewModel
         _baseUrl = baseUrl;
         _gameKey = gameKey;
         _hostName = hostName;
+        _hostNodeId = hostNodeId;
         _notifier = notifier;
         _onCreated = onCreated;
     }
@@ -74,7 +77,7 @@ public partial class CreateRoomDialogViewModel : BaseViewModel
 
         try
         {
-            RelayRoom room = await _relay.CreateRoomAsync(_baseUrl, name, _hostName, _gameKey, password);
+            RelayRoom room = await _relay.CreateRoomAsync(_baseUrl, name, _hostName, _hostNodeId, _gameKey, password);
             _notifier.Success("房间已创建", $"「{name}」已经上线，正在进入房间……");
             _dialog.Dismiss();
 

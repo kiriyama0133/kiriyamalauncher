@@ -30,6 +30,12 @@
 			<Setter Property="FontSize" Value="{DynamicResource AppFontSizeSmall}" />
 			<Setter Property="VerticalAlignment" Value="Center" />
 		</Style>
+
+		<!-- 转让房主按钮：低调的小按钮，只在房主本人视角出现。 -->
+		<Style Selector="Button.transferHost">
+			<Setter Property="Padding" Value="8,3" />
+			<Setter Property="Cursor" Value="Hand" />
+		</Style>
 	</UserControl.Styles>
 
 	<StackPanel Spacing="14">
@@ -44,8 +50,8 @@
 				</StackPanel>
 				<StackPanel Orientation="Horizontal" Spacing="10">
 					<StackPanel Orientation="Horizontal" Spacing="5">
-						<i:MaterialIcon Kind="Account" Width="14" Height="14" VerticalAlignment="Center"
-										Foreground="{DynamicResource SukiLowText}" />
+						<i:MaterialIcon Kind="Crown" Width="14" Height="14" VerticalAlignment="Center"
+										Foreground="{DynamicResource SukiPrimaryColor}" />
 						<TextBlock Classes="playerMeta" Text="{Binding HostName, StringFormat='房主：{0}'}" />
 					</StackPanel>
 					<StackPanel Orientation="Horizontal" Spacing="5">
@@ -74,7 +80,7 @@
 				   HorizontalAlignment="Center" Opacity="0.6" Margin="0,20"
 				   IsVisible="{Binding !HasPlayers}" />
 
-		<!-- 成员列表：每名成员一张玻璃卡片，显示昵称 + 虚拟 IP + 延迟。 -->
+		<!-- 成员列表：每名成员一张玻璃卡片，显示昵称 + 虚拟 IP + 延迟；房主带徽章。 -->
 		<ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto">
 			<ItemsControl ItemsSource="{Binding Players}">
 				<ItemsControl.ItemTemplate>
@@ -82,15 +88,30 @@
 						<suki:GlassCard Classes="playerCard">
 							<Grid ColumnDefinitions="*,Auto">
 								<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+									<i:MaterialIcon Kind="Crown" Width="15" Height="15" VerticalAlignment="Center"
+													Foreground="{DynamicResource SukiPrimaryColor}"
+													IsVisible="{Binding IsHost}" />
 									<TextBlock Classes="playerName" Text="{Binding Name}" VerticalAlignment="Center" />
 									<TextBlock Classes="playerMeta" Text="{Binding VirtualIp, StringFormat='虚拟 IP：{0}'}"
 											   VerticalAlignment="Center" />
 								</StackPanel>
 
-								<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-									<i:MaterialIcon Kind="Speedometer" Width="14" Height="14" VerticalAlignment="Center"
-													Foreground="{DynamicResource SukiLowText}" />
-									<TextBlock Classes="playerMeta" Text="{Binding LatencyText}" />
+								<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+									<!-- 只有房主本人能看到别人的「设为房主」按钮。 -->
+									<Button Classes="Basic transferHost"
+											Command="{Binding TransferHostCommand}"
+											IsVisible="{Binding CanBePromoted}">
+										<StackPanel Orientation="Horizontal" Spacing="5">
+											<i:MaterialIcon Kind="AccountSwitch" Width="13" Height="13" />
+											<TextBlock Text="设为房主" FontSize="{DynamicResource AppFontSizeSmall}" />
+										</StackPanel>
+									</Button>
+
+									<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+										<i:MaterialIcon Kind="Speedometer" Width="14" Height="14" VerticalAlignment="Center"
+														Foreground="{DynamicResource SukiLowText}" />
+										<TextBlock Classes="playerMeta" Text="{Binding LatencyText}" />
+									</StackPanel>
 								</StackPanel>
 							</Grid>
 						</suki:GlassCard>

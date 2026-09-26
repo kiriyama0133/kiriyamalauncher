@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +23,13 @@ public class HttpRelayServerClient : IRelayServerClient
 {
     /// <summary>中继服务器专用 HttpClient 的名字（连接池带限期，见 DI 注册）。</summary>
     public const string ClientName = "RelayServer";
+
+    /// <summary>
+    /// SSE 长连接专用 HttpClient 的名字。
+    /// 必须与 <see cref="ClientName"/> 分开：那个客户端的连接池有 30 秒限期，
+    /// 用来治 10054，但会把持续的事件流在传输中掐断。
+    /// </summary>
+    public const string SseClientName = "RelayServerSse";
 
     /// <summary>读接口遇瞬时网络错误时的最大尝试次数（含首次）。</summary>
     private const int MAX_GET_ATTEMPTS = 3;
@@ -103,11 +111,11 @@ public class HttpRelayServerClient : IRelayServerClient
     }
 
     /// <inheritdoc />
-    public async Task<RelayRoom> CreateRoomAsync(string baseUrl, string name, string hostName, string gameKey, string? password, int maxPlayers = 0, CancellationToken cancellationToken = default)
+    public async Task<RelayRoom> CreateRoomAsync(string baseUrl, string name, string hostName, string? hostNodeId, string gameKey, string? password, int maxPlayers = 0, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
         using StringContent content = BuildJson(
-            new CreateRoomRequestDto { Name = name, HostName = hostName, Game = gameKey, Password = password, MaxPlayers = maxPlayers },
+            new CreateRoomRequestDto { Name = name, HostName = hostName, HostNodeId = hostNodeId, Game = gameKey, Password = password, MaxPlayers = maxPlayers },
             RelayJsonContext.Default.CreateRoomRequestDto);
 
         using HttpResponseMessage response = await client
@@ -181,6 +189,151 @@ public class HttpRelayServerClient : IRelayServerClient
     }
 
     /// <inheritdoc />
+    public async Task TransferHostAsync(string baseUrl, string roomId, string requesterNodeId, string targetNodeId, CancellationToken cancellationToken = default)
+    {
+        using HttpClient client = CreateClient();
+        using StringContent content = BuildJson(
+            new TransferHostRequestDto { RequesterNodeId = requesterNodeId, TargetNodeId = targetNodeId },
+            RelayJsonContext.Default.TransferHostRequestDto);
+
+        using HttpResponseMessage response = await client
+            .PostAsync($"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/transfer-host", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        string json = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
+
+        switch ((int)response.StatusCode)
+        {
+            case 403:
+                throw new RelayServerException("只有房主可以转让房主身份。");
+            case 404:
+                throw new RelayServerException("房间不存在或已关闭。");
+        }
+
+        EnsureSuccess(response, json);
+    }
+
+    /// <summary>
+    /// 订阅房间事件流（SSE）。
+    ///
+    /// 用 <see cref="HttpCompletionOption.ResponseHeadersRead"/> 拿到响应后逐行读流：
+    /// SSE 的帧以空行分隔，<c>event:</c> 是类型、<c>data:</c> 是 JSON 载荷、
+    /// 以冒号开头的行是服务端心跳（直接忽略）。
+    /// </summary>
+    public async Task SubscribeRoomEventsAsync(string baseUrl, string roomId, Func<RelayRoomEvent, Task> onEvent, CancellationToken cancellationToken = default)
+    {
+        // 长连接：用不回收连接的命名客户端，且不能沿用 8 秒总超时。
+        using HttpClient client = _httpClientFactory.CreateClient(SseClientName);
+        client.Timeout = Timeout.InfiniteTimeSpan;
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/api/rooms/{Uri.EscapeDataString(roomId)}/events");
+
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using HttpResponseMessage response = await client
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        if ((int)response.StatusCode == 404)
+        {
+            throw new RelayServerException("房间不存在或已关闭。");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string errorBody = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
+            EnsureSuccess(response, errorBody);
+        }
+
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+
+        string? eventType = null;
+        StringBuilder data = new();
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            string? line;
+
+            try
+            {
+                line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            // null 表示服务端关闭了事件流。
+            if (line is null)
+            {
+                break;
+            }
+
+            // 空行 = 一条事件结束（SSE 的帧分隔符）。
+            if (line.Length == 0)
+            {
+                if (eventType is not null)
+                {
+                    await DispatchRoomEventAsync(eventType, data.ToString(), onEvent).ConfigureAwait(false);
+                }
+
+                eventType = null;
+                data.Clear();
+                continue;
+            }
+
+            // 以冒号开头的是注释行（服务端心跳），丢弃。
+            if (line[0] == ':')
+            {
+                continue;
+            }
+
+            if (line.StartsWith("event:", StringComparison.Ordinal))
+            {
+                eventType = line[6..].Trim();
+            }
+            else if (line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                if (data.Length > 0)
+                {
+                    data.Append('\n');
+                }
+
+                data.Append(line[5..].TrimStart());
+            }
+        }
+    }
+
+    /// <summary>把一条 SSE 事件解析成 <see cref="RelayRoomEvent"/> 并回调；载荷坏掉时跳过该条，不断开整条流。</summary>
+    private static async Task DispatchRoomEventAsync(string eventType, string data, Func<RelayRoomEvent, Task> onEvent)
+    {
+        RoomEventDto? dto = null;
+
+        try
+        {
+            dto = JsonSerializer.Deserialize(data, RelayJsonContext.Default.RoomEventDto);
+        }
+        catch (JsonException)
+        {
+            // 忽略无法解析的事件。
+        }
+
+        var roomEvent = new RelayRoomEvent(
+            dto?.Type ?? eventType,
+            dto?.Reason,
+            dto?.HostName,
+            dto?.HostNodeId);
+
+        await onEvent(roomEvent).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<RelayRoomPlayers> ListPlayersAsync(string baseUrl, string roomId, CancellationToken cancellationToken = default)
     {
         using HttpClient client = CreateClient();
@@ -210,10 +363,15 @@ public class HttpRelayServerClient : IRelayServerClient
                     p.PlayerId,
                     p.Nickname ?? string.Empty,
                     p.NodeId ?? string.Empty,
-                    p.VirtualIp ?? string.Empty))
+                    p.VirtualIp ?? string.Empty,
+                    p.IsHost))
                 .ToList();
 
-            return new RelayRoomPlayers(dto.RoomId ?? string.Empty, dto.RoomName ?? string.Empty, players);
+            return new RelayRoomPlayers(
+                dto.RoomId ?? string.Empty,
+                dto.RoomName ?? string.Empty,
+                dto.HostNodeId ?? string.Empty,
+                players);
         }
         catch (JsonException ex)
         {

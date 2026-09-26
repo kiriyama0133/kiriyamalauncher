@@ -602,6 +602,9 @@ public partial class GameSessionViewModel : PageViewModel
         StatusText = IDLE_BOARD_TEXT;
         ActivePageContent = new GameBoardPageViewModel(this, game);
 
+        // 告诉房间大厅当前板块：创建房间时按板块上报，房间列表也只显示本板块的房间。
+        Rooms.SetActiveGame(game.IntegrationId);
+
         GameIntegrationInfoDto? integration = _launchService.FindIntegration(game.IntegrationId);
 
         // 客户端引擎走真虚拟网卡，游戏直接互通，不需要注入组件：跳过集成面板与进程监视。

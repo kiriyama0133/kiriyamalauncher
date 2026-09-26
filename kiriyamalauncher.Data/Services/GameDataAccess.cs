@@ -21,6 +21,15 @@ public class GameDataAccess : IGameDataAccess
             Description = "回合制策略，一局到天亮",
             CoverImage = "sid.jpeg",
             IntegrationId = Civilization6GameIntegration.INTEGRATION_ID
+        },
+        new Game
+        {
+            // Minecraft 没有进程注入集成（联机走局域网发现），这个标识同时用作中继服务器的板块 key，
+            // 需要与服务端 InMemoryGameCatalog 里的 GameKey 保持一致。
+            Name = "Minecraft",
+            Description = "方块世界，一起建造与生存",
+            CoverImage = "mc.jpg",
+            IntegrationId = "mc"
         }
     ];
 
