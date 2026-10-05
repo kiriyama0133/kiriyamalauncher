@@ -1,2 +1,0 @@
-ISukiUI.Controls.SukiTransitioningContentControl
-SukiTransitioningContentControl
